@@ -3,7 +3,7 @@
  * Front-end route handling for the Daymark app shell.
  *
  * Route strategy (committed): rewrite rules mapping /daymark and its
- * /notifications, /explore, /search, and /me sub-routes to the
+ * /notifications, /explore, /search (which opens Explore), and /me sub-routes to the
  * `daymark_app` query var, with a template_include filter that loads
  * templates/app-shell.php.
  *
@@ -48,6 +48,8 @@ class Daymark_Routes {
 	 * WordPress's own permalink handling applies — the same reason
 	 * 'notifications' already worked this way. Create/Publish/Success stay
 	 * pure client-side states layered on top of 'home', same as before.
+	 * Search is part of the Explore screen since issue #269; 'search' stays
+	 * a route so saved links keep working, and the app opens Explore for it.
 	 *
 	 * @var string[]
 	 */
@@ -682,6 +684,30 @@ class Daymark_Routes {
 	}
 
 	/**
+	 * The year of the site's oldest published post, for the years Search's
+	 * "Pick a month" offers. This year when the site has no posts yet.
+	 *
+	 * @return int
+	 */
+	public static function first_post_year(): int {
+		$oldest = get_posts(
+			array(
+				'post_type'        => 'post',
+				'post_status'      => 'publish',
+				'posts_per_page'   => 1,
+				'orderby'          => 'date',
+				'order'            => 'ASC',
+				'no_found_rows'    => true,
+				'suppress_filters' => false,
+			)
+		);
+
+		$year = empty( $oldest ) ? 0 : (int) get_the_date( 'Y', $oldest[0] );
+
+		return $year > 0 ? $year : (int) wp_date( 'Y' );
+	}
+
+	/**
 	 * Month and weekday names in the site's language, for the app's own
 	 * Date Format rendering. Read from core's $wp_locale, which WordPress
 	 * already translates, so Daymark's translators never repeat that work.
@@ -966,6 +992,9 @@ class Daymark_Routes {
 			// saves their Mark as a draft, and the app says so.
 			'canPublish'             => current_user_can( 'publish_posts' ),
 			'pluginsUrl'             => esc_url_raw( admin_url( 'plugins.php' ) ),
+			// The year of the site's first post, so Search's "Pick a
+			// month" offers every year there is something from.
+			'searchFirstYear'        => self::first_post_year(),
 			// The newest Timeline item this user has seen (or null), so
 			// Home can open anchored on it with newer posts above — see
 			// Daymark_Timeline_Position.

@@ -1512,4 +1512,156 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$plain->set_param( 's', 'Counted' );
 		$this->assertArrayNotHasKey( 'X-WP-Total', rest_do_request( $plain )->get_headers(), 'No count unless asked for' );
 	}
+
+	/** Issue #269: a keyword also finds a Mark by its tag's name, not only its words. */
+	public function test_search_matches_a_mark_by_its_tag_name() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/tag-feed/' );
+		$tagged          = $this->create_mark( '2024-01-01 00:00:00', 'Morning on the dock' );
+		$in_words        = $this->create_mark( '2024-01-02 00:00:00', 'A lakeside walk' );
+		$this->create_mark( '2024-01-03 00:00:00', 'Something Else Entirely' );
+		$this->create_subscription_post( $subscription_id, '2024-01-04 00:00:00', 'Not A Match' );
+		wp_set_post_tags( $tagged, array( 'Lakeside' ) );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 's', 'lakeside' );
+		$request->set_param( 'count', true );
+		$response = rest_do_request( $request );
+
+		$this->assertSame( array( $in_words, $tagged ), array_column( $response->get_data(), 'id' ) );
+		$this->assertSame( '2', $response->get_headers()['X-WP-Total'] ?? null, 'The count includes the tag match' );
+	}
+
+	/** Issue #269: the tag match keeps every other filter, here the type. */
+	public function test_tag_name_match_still_respects_the_type_filter() {
+		wp_set_current_user( $this->author_a );
+
+		$note  = $this->create_mark( '2024-01-01 00:00:00', 'A note', 'note' );
+		$image = $this->create_mark( '2024-01-02 00:00:00', 'A photo', 'image' );
+		wp_set_post_tags( $note, array( 'Harbor' ) );
+		wp_set_post_tags( $image, array( 'Harbor' ) );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 's', 'harbor' );
+		$request->set_param( 'type', 'image' );
+
+		$this->assertSame( array( $image ), array_column( rest_do_request( $request )->get_data(), 'id' ) );
+	}
+
+	/** Issue #269: a tag match must not surface a password-protected post to someone who can't read it. */
+	public function test_tag_name_match_leaves_out_password_protected_posts() {
+		wp_set_current_user( $this->author_a );
+
+		$open      = $this->create_mark( '2024-01-01 00:00:00', 'Open post' );
+		$protected = $this->create_mark( '2024-01-02 00:00:00', 'Locked post' );
+		wp_set_post_tags( $open, array( 'Orchard' ) );
+		wp_set_post_tags( $protected, array( 'Orchard' ) );
+		wp_update_post(
+			array(
+				'ID'            => $protected,
+				'post_password' => 'secret',
+			)
+		);
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 's', 'orchard' );
+
+		$this->assertSame( array( $open ), array_column( rest_do_request( $request )->get_data(), 'id' ) );
+	}
+
+	/** Issue #269: a keyword also finds a followed site's posts by the site's name. */
+	public function test_search_matches_subscription_posts_by_their_site_name() {
+		wp_set_current_user( $this->author_a );
+
+		$friend = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://quentin.example/',
+				'feed_url'   => 'https://quentin.example/feed/',
+				'site_title' => 'Quentin Quillfeather',
+			)
+		);
+		$other  = $this->create_subscription( 'https://example.com/other-feed/' );
+
+		$by_friend = $this->create_subscription_post( $friend, '2024-01-02 00:00:00', 'A weekend away' );
+		$mentions  = $this->create_subscription_post( $other, '2024-01-03 00:00:00', 'Lunch with Quentin' );
+		$this->create_subscription_post( $other, '2024-01-04 00:00:00', 'Not A Match' );
+		$this->create_mark( '2024-01-05 00:00:00', 'Not A Match Either' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 's', 'quentin' );
+
+		$this->assertSame( array( $mentions, $by_friend ), array_column( rest_do_request( $request )->get_data(), 'id' ) );
+	}
+
+	/** Issue #269: a search that matches no tag or site name runs as it always did. */
+	public function test_search_with_no_tag_or_site_match_is_unchanged() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/plain-feed/' );
+		$mark            = $this->create_mark( '2024-01-01 00:00:00', 'Unique Okapi Title' );
+		$this->create_subscription_post( $subscription_id, '2024-01-02 00:00:00', 'Not A Match' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 's', 'Okapi' );
+
+		$this->assertSame( array( $mark ), array_column( rest_do_request( $request )->get_data(), 'id' ) );
+		$this->assertFalse( has_filter( 'posts_search' ), 'No search filter is left behind' );
+	}
+
+	/** Issue #269: `tag` narrows to one exact tag, and to the site's own posts. */
+	public function test_tag_param_returns_only_posts_with_that_tag() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/tagged-feed/' );
+		$tagged          = $this->create_mark( '2024-01-01 00:00:00', 'Tagged travel' );
+		$other_tag       = $this->create_mark( '2024-01-02 00:00:00', 'Tagged travelogue' );
+		$this->create_mark( '2024-01-03 00:00:00', 'No tag, but the word travel' );
+		$this->create_subscription_post( $subscription_id, '2024-01-04 00:00:00', 'A friend writes about travel' );
+		wp_set_post_tags( $tagged, array( 'Travel' ) );
+		wp_set_post_tags( $other_tag, array( 'Travelogue' ) );
+
+		$term = get_term_by( 'name', 'Travel', 'post_tag' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'tag', $term->term_id );
+
+		$this->assertSame( array( $tagged ), array_column( rest_do_request( $request )->get_data(), 'id' ) );
+	}
+
+	/** Issue #269: `place` narrows to one exact Check In place, and to the site's own posts. */
+	public function test_place_param_returns_only_marks_checked_in_there() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/place-feed/' );
+		$there           = $this->create_mark( '2024-01-01 00:00:00', 'Checked in', 'checkin' );
+		$elsewhere       = $this->create_mark( '2024-01-02 00:00:00', 'Checked in elsewhere', 'checkin' );
+		$this->create_mark( '2024-01-03 00:00:00', 'No place at all' );
+		$this->create_subscription_post( $subscription_id, '2024-01-04 00:00:00', 'A friend at Lake Geneva' );
+		update_post_meta( $there, '_daymark_place_name', 'Lake Geneva, Wisconsin' );
+		update_post_meta( $elsewhere, '_daymark_place_name', 'Lake Geneva Public Library' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'place', 'Lake Geneva, Wisconsin' );
+
+		$this->assertSame( array( $there ), array_column( rest_do_request( $request )->get_data(), 'id' ) );
+	}
+
+	/** Issue #269: a tag or place combines with one followed site to nothing, since only own posts have either. */
+	public function test_tag_param_with_a_followed_site_returns_nothing() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/none-feed/' );
+		$tagged          = $this->create_mark( '2024-01-01 00:00:00', 'Tagged' );
+		$this->create_subscription_post( $subscription_id, '2024-01-02 00:00:00', 'From a friend' );
+		wp_set_post_tags( $tagged, array( 'Garden' ) );
+
+		$term = get_term_by( 'name', 'Garden', 'post_tag' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'tag', $term->term_id );
+		$request->set_param( 'subscription_id', $subscription_id );
+
+		$this->assertSame( array(), rest_do_request( $request )->get_data() );
+	}
 }

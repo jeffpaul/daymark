@@ -340,6 +340,22 @@ decision rows for the full technical record.
   keyword/type/source. Author, tag, and with-location filters were dropped in
   review: they duplicated the Source dropdown, the keyword search, and the
   Check-ins type chip. ([#413](https://github.com/jeffpaul/daymark/pull/413))
+- [x] **Search starting screen, shortcuts, and one filter row**: Search at
+  rest shows recent searches, the people you follow, and your most-used tags
+  where it used to repeat the Timeline. Typing offers matching people, tags,
+  and Check In places as shortcuts above the results, and the keyword also
+  matches tag names and followed sites' names. Date, Source, and the type
+  chips share one sliding row, and Date gains This Year, Last Year, and "Pick
+  a month". Builds on the date filter from
+  [#413](https://github.com/jeffpaul/daymark/pull/413); from the concepts for
+  [#269](https://github.com/jeffpaul/daymark/issues/269). ([#615](https://github.com/jeffpaul/daymark/pull/615))
+- [x] **Explore and Search as one tab, Notifications in the bar**: the
+  bottom nav is now Timeline, Explore, +New, Notifications, Me. Explore has
+  search on top with a Bookmarks button beside it, then "On this day" and
+  Following; "Browse by type" went, since the type chips cover it. Notifications left the header
+  bell for its own tab, which shows an unread mark. One icon for the merged
+  tab: a magnifying glass with the compass needle inside. Old Search links
+  still open it. ([#615](https://github.com/jeffpaul/daymark/pull/615))
 - [x] **Me v1**: identity, a link into Search scoped to the user's own Marks,
   a view-only Drafts list, and links out to Notifications, wp-admin
   Subscriptions, and WordPress's own profile/logout.
@@ -838,7 +854,12 @@ that loop without new destinations or a new social network.
   "Shipped — Quiet Mark metadata capture" above.
 - **Explore, Search, and Me's remaining scope** — see "Shipped — Bottom
   navigation rework" above. Search's date filter and Explore's
-  memories section shipped together ([#413](https://github.com/jeffpaul/daymark/pull/413));
+  memories section shipped together ([#413](https://github.com/jeffpaul/daymark/pull/413)),
+  and Search's starting screen, shortcuts, and single filter row followed,
+  along with folding Search into the Explore tab and moving Notifications
+  into the bar ([#615](https://github.com/jeffpaul/daymark/pull/615)). A page for each
+  person you follow is tracked on its own
+  ([#614](https://github.com/jeffpaul/daymark/issues/614)).
   Me's three directions have since shipped too
   ([#295](https://github.com/jeffpaul/daymark/issues/295)); the still-open
   half of Explore ([#294](https://github.com/jeffpaul/daymark/issues/294))

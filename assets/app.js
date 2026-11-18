@@ -1495,7 +1495,31 @@
 		{ key: 'last_week', label: __('Last Week', 'daymark') },
 		{ key: 'this_month', label: __('This Month', 'daymark') },
 		{ key: 'last_month', label: __('Last Month', 'daymark') },
+		// Past last month (issue #269): the two years most searches for
+		// something older fall in, then any single month by name.
+		{ key: 'this_year', label: __('This Year', 'daymark') },
+		{ key: 'last_year', label: __('Last Year', 'daymark') },
 	];
+
+	// The Date dropdown's last choice. Picking it shows a month and a year
+	// to choose (ExploreScreen.showMonthPicker()), and the date filter then
+	// holds 'month:YYYY-MM' instead of one of the keys above.
+	const SEARCH_DATE_PICK_MONTH = 'pick_month';
+
+	// 'month:2024-03' as { year: 2024, month: 2 } (month from 0, as Date
+	// counts them), or null for anything else.
+	function parseMonthFilter(key) {
+		const match = /^month:(\d{4})-(\d{2})$/.exec(key || '');
+		if (!match) {
+			return null;
+		}
+		const month = Number(match[2]) - 1;
+		return month >= 0 && month <= 11 ? { year: Number(match[1]), month } : null;
+	}
+
+	function monthFilterKey(year, month) {
+		return 'month:' + year + '-' + String(month + 1).padStart(2, '0');
+	}
 
 	// Resolves a SEARCH_DATE_FILTERS key into its inclusive [after, before]
 	// bound(s), as RFC 3339 (the format GET /timeline's own args validate).
@@ -1532,8 +1556,23 @@
 				const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 				return { after: toIso(start), before: toIso(new Date(end.getTime() - 1)) };
 			}
-			default:
-				return null;
+			case 'this_year':
+				return { after: toIso(new Date(now.getFullYear(), 0, 1)) };
+			case 'last_year': {
+				const end = new Date(now.getFullYear(), 0, 1);
+				const start = new Date(now.getFullYear() - 1, 0, 1);
+				return { after: toIso(start), before: toIso(new Date(end.getTime() - 1)) };
+			}
+			default: {
+				// One month picked by name: 'month:YYYY-MM'.
+				const picked = parseMonthFilter(key);
+				if (!picked) {
+					return null;
+				}
+				const start = new Date(picked.year, picked.month, 1);
+				const end = new Date(picked.year, picked.month + 1, 1);
+				return { after: toIso(start), before: toIso(new Date(end.getTime() - 1)) };
+			}
 		}
 	}
 
@@ -1542,15 +1581,18 @@
 	// accessible name and hover title — see NAV_TABS/navFooterMarkup().
 	const TIMELINE_GLYPH =
 		'<polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline>';
+	// Explore holds Search too, so its icon is both at once: a magnifying
+	// glass with the compass needle inside the lens. The needle is drawn a
+	// little thinner than the glass so it stays open at 22px.
 	const EXPLORE_GLYPH =
-		'<circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>';
-	const SEARCH_GLYPH =
-		'<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>';
+		'<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><polygon stroke-width="1.6" points="13.97 8.03 12.48 12.48 8.03 13.97 9.52 9.52 13.97 8.03"></polygon>';
+	const NOTIFICATIONS_GLYPH =
+		'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path>';
 	const ME_GLYPH =
 		'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>';
 
 	// Generic 22x22 outline icon — the bottom nav's tabs, Explore's
-	// "Browse by type" buttons, and Me's fallback avatar glyph all share it.
+	// Bookmarks button, and Me's fallback avatar glyph all share it.
 	function navIcon(glyph) {
 		return `<svg class="daymark-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
 	}
@@ -5927,8 +5969,8 @@
 	// from; `lastMainScreen` is the last of the four bottom-nav screens
 	// shown, used when the composer was opened some other way (a share,
 	// an admin bar link, a reload).
-	const MAIN_SCREENS = ['#home', '#explore', '#search', '#me'];
-	const RETURN_SCREENS = MAIN_SCREENS.concat(['#notifications']);
+	const MAIN_SCREENS = ['#home', '#explore', '#notifications', '#me'];
+	const RETURN_SCREENS = MAIN_SCREENS;
 	const COMPOSER_SCREENS = ['#create'];
 	let historyPosition = -1;
 	let currentScreen = null;
@@ -5983,6 +6025,11 @@
 		// bookmark, a reload) opens the composer, where Publish is now.
 		if ('#publish' === hash) {
 			hash = '#create';
+		}
+		// Search used to be a tab of its own; it now lives at the top of
+		// Explore, so an old link or bookmark to it opens Explore.
+		if ('#search' === hash) {
+			hash = '#explore';
 		}
 		let target = SCREENS[hash] ? hash : '#home';
 
@@ -6079,11 +6126,11 @@
 		checkUnreadNotifications();
 	}
 
-	// The bell's unread dot used to be decided once, when the page loaded.
-	// Re-check it (GET /notifications/status, which marks nothing seen)
-	// when the app comes back to the foreground and when you move between
-	// screens, at most once a minute, so replies that arrive during a visit
-	// show up. The Notifications screen itself clears the flag.
+	// The Notifications tab's unread mark used to be decided once, when the
+	// page loaded. Re-check it (GET /notifications/status, which marks
+	// nothing seen) when the app comes back to the foreground and when you
+	// move between screens, at most once a minute, so replies that arrive
+	// during a visit show up. The Notifications screen itself clears the flag.
 	const UNREAD_CHECK_INTERVAL_MS = 60000;
 	let lastUnreadCheck = Date.now();
 
@@ -6101,25 +6148,34 @@
 			if (!config.notifications) {
 				config.notifications = {};
 			}
-			if (hasUnread !== !!config.notifications.hasUnread) {
-				config.notifications.hasUnread = hasUnread;
+			const changed = hasUnread !== !!config.notifications.hasUnread;
+			config.notifications.hasUnread = hasUnread;
+			if (changed) {
 				updateUnreadDots();
 			}
 			if (result && 'number' === typeof result.unread_count) {
 				updateAppBadge(result.unread_count);
 			}
 		} catch (err) {
-			// Best effort: the dot just stays as it was.
+			// Best effort: the mark just stays as it was.
 		}
 	}
 
-	// Redraws every Notifications bell on screen from config.
+	// Redraws the Notifications tab in the bottom nav from config.
 	function updateUnreadDots() {
-		root.querySelectorAll('a.daymark-iconbtn[href="#notifications"]').forEach((link) => {
+		root.querySelectorAll('.daymark-bottomnav__link[href="#notifications"]').forEach((link) => {
 			const fresh = document.createElement('div');
-			fresh.innerHTML = notificationsIconButton().trim();
+			fresh.innerHTML = navLinkMarkup(NOTIFICATIONS_TAB, link.classList.contains('is-active')).trim();
 			if (fresh.firstElementChild) {
+				// Swapping the link out would drop keyboard focus from it.
+				const focused = document.activeElement === link;
 				link.replaceWith(fresh.firstElementChild);
+				if (focused) {
+					const next = root.querySelector('.daymark-bottomnav__link[href="#notifications"]');
+					if (next) {
+						next.focus({ preventScroll: true });
+					}
+				}
 			}
 		});
 	}
@@ -6130,13 +6186,19 @@
 	// on each unread check, and whenever the Notifications screen changes
 	// what is read. Browsers without the Badging API, or an app that isn't
 	// installed, simply show nothing. With the setting off, any badge an
-	// earlier visit set is cleared once at boot.
+	// earlier visit set is cleared once at boot. The Notifications tab
+	// shows the same number (see notificationsNavMark()), so it is kept
+	// on config and the tab is redrawn when it changes.
 	function updateAppBadge(count) {
+		const unread = Math.max(0, parseInt(count, 10) || 0);
+		const enabled = !!(config.notifications && config.notifications.badge);
+		if (config.notifications && unread !== config.notifications.unreadCount) {
+			config.notifications.unreadCount = unread;
+			updateUnreadDots();
+		}
 		if (!('setAppBadge' in navigator)) {
 			return;
 		}
-		const unread = Math.max(0, parseInt(count, 10) || 0);
-		const enabled = !!(config.notifications && config.notifications.badge);
 		try {
 			const result = enabled && unread > 0 ? navigator.setAppBadge(unread) : navigator.clearAppBadge();
 			if (result && 'function' === typeof result.catch) {
@@ -6149,16 +6211,16 @@
 
 	// --- Shared: persistent bottom nav, feed-list rendering ---
 	//
-	// Timeline (Home), Explore, Search, and Me all share one footer: four
-	// nav tabs flanking the +New launcher. Extracted here — rather than
+	// Timeline (Home), Explore, Notifications, and Me all share one footer:
+	// four nav tabs flanking the +New launcher. Extracted here — rather than
 	// left as HomeScreen methods — so every screen that needs it (not just
 	// Home) can bind the same launcher/auto-hide/dismiss behavior against
 	// its own screen object.
 
-	// A one-shot filter handed from Explore/Me to Search right before
-	// navigate('#search') — e.g. "browse by type" or "your Marks" — the
-	// same pattern state.pendingType already uses for the Create composer.
-	// SearchScreen.init() consumes and clears it.
+	// A one-shot filter handed to Explore's search right before
+	// navigate('#explore') — e.g. "My marks" on Me, or a card's site icon —
+	// the same pattern state.pendingType already uses for the Create
+	// composer. ExploreScreen.init() consumes and clears it.
 	let searchPreset = null;
 
 	// One-shot: set when Home's drafts row is tapped, so the Me screen
@@ -6189,26 +6251,66 @@
 		);
 	}
 
+	const NOTIFICATIONS_TAB = {
+		key: 'notifications',
+		hash: '#notifications',
+		label: __('Notifications', 'daymark'),
+		glyph: NOTIFICATIONS_GLYPH,
+	};
+
+	// Explore includes Search (one tab, one icon), which left room for
+	// Notifications in the bar; it used to be a bell in each header.
 	const NAV_TABS = [
 		{ key: 'home', hash: '#home', label: __('Timeline', 'daymark'), glyph: TIMELINE_GLYPH },
 		{ key: 'explore', hash: '#explore', label: __('Explore', 'daymark'), glyph: EXPLORE_GLYPH },
-		{ key: 'search', hash: '#search', label: __('Search', 'daymark'), glyph: SEARCH_GLYPH },
+		NOTIFICATIONS_TAB,
 		{ key: 'me', hash: '#me', label: __('Me', 'daymark'), glyph: ME_GLYPH },
 	];
 
+	// What the Notifications tab says is waiting. A site that shows the
+	// unread count on the app's icon (Settings -> Daymark -> General) gets
+	// the same number here, since it is already being counted; any other
+	// site gets a dot when something arrived since the last visit, because
+	// counting means reading the whole list. `mark` is the badge's markup
+	// and `label` the tab's accessible name.
+	function notificationsNavMark() {
+		const notifications = config.notifications || {};
+		const count = notifications.badge ? Math.max(0, parseInt(notifications.unreadCount, 10) || 0) : 0;
+		if (count > 0) {
+			return {
+				mark: `<span class="daymark-bottomnav__count" aria-hidden="true">${esc(count > 99 ? '99+' : String(count))}</span>`,
+				label: sprintf(
+					/* translators: %d: number of unread notifications */
+					_n('Notifications — %d unread', 'Notifications — %d unread', count, 'daymark'),
+					count
+				),
+			};
+		}
+		if (notifications.hasUnread) {
+			return {
+				mark: '<span class="daymark-bottomnav__dot" aria-hidden="true"></span>',
+				label: __('Notifications — unread replies', 'daymark'),
+			};
+		}
+		return { mark: '', label: NOTIFICATIONS_TAB.label };
+	}
+
+	function navLinkMarkup(tab, isActive) {
+		const unread = 'notifications' === tab.key ? notificationsNavMark() : null;
+		const label = unread ? unread.label : tab.label;
+		return `<a class="daymark-bottomnav__link${isActive ? ' is-active' : ''}" href="${esc(tab.hash)}" title="${esc(
+			tab.label
+		)}"${isActive ? ' aria-current="page"' : ''}><span class="daymark-bottomnav__icon">${navIcon(tab.glyph)}${
+			unread ? unread.mark : ''
+		}</span><span class="daymark-visually-hidden">${esc(label)}</span></a>`;
+	}
+
 	// The persistent footer: Timeline/Explore flank one side of the +New
-	// launcher, Search/Me the other — the launcher stays the visual and
-	// structural center, never part of the tab list itself, so active-tab
-	// styling can never land on it by accident.
+	// launcher, Notifications/Me the other — the launcher stays the visual
+	// and structural center, never part of the tab list itself, so
+	// active-tab styling can never land on it by accident.
 	function navFooterMarkup(active) {
-		const navLink = (tab) =>
-			`<a class="daymark-bottomnav__link${
-				tab.key === active ? ' is-active' : ''
-			}" href="${esc(tab.hash)}" title="${esc(tab.label)}"${
-				tab.key === active ? ' aria-current="page"' : ''
-			}>${navIcon(tab.glyph)}<span class="daymark-visually-hidden">${esc(
-				tab.label
-			)}</span></a>`;
+		const navLink = (tab) => navLinkMarkup(tab, tab.key === active);
 		const before = NAV_TABS.slice(0, 2).map(navLink).join('');
 		const after = NAV_TABS.slice(2).map(navLink).join('');
 		const bubbles = LAUNCHER_TYPES.map(
@@ -6236,7 +6338,7 @@
 	// The Home launcher: tapping "+ New Mark" fans out Image/Video/Audio/
 	// Note bubbles (icon-only arc); tapping a bubble seeds the composer's
 	// pendingType and jumps to #create. `screen` is whichever screen object
-	// owns the footer currently on the page (Home/Explore/Search/Me all
+	// owns the footer currently on the page (Home/Explore/Notifications/Me all
 	// call this from their own bindEvents()) — its openLauncher/closeLauncher
 	// and _launcherOpen get attached here, same as bindChromeAutoHide()
 	// below and the per-item ⋯ menu convention (aria-expanded,
@@ -6468,7 +6570,7 @@
 
 	// Wires the launcher and the header/footer scroll auto-hide for a
 	// screen that has nothing else to add to bindDismissible() —
-	// Explore/Search/Me. Home calls bindLauncher()/bindChromeAutoHide()
+	// Explore/Me. Home and Notifications call bindLauncher()/bindChromeAutoHide()
 	// directly instead, so it can merge navFooterDismissEntry() into its
 	// own larger dismissible list.
 	function bindNavFooter(screen) {
@@ -6499,13 +6601,12 @@
 	// The site icon's one action, shared by a Mark's own icon and a
 	// subscription post's site icon: filter Timeline down to just that
 	// source. Hands the same source value the Source filter's <select>
-	// already uses ('mine' or a subscription id) to Search via the same
-	// one-shot searchPreset handoff Explore/Me use, rather than
-	// reaching into a search bar that (unlike before the bottom-nav rework)
-	// no longer lives on the calling screen.
+	// already uses ('mine' or a subscription id) to Explore's search via
+	// the same one-shot searchPreset handoff Me uses, rather than reaching
+	// into a search bar that may not be on the calling screen.
 	function applySourceFilter(value) {
 		searchPreset = { source: value };
-		navigate('#search');
+		navigate('#explore');
 	}
 
 	// The Source filter's <option>s: "All sites" and "My marks" always
@@ -9065,13 +9166,11 @@
 		}
 	}
 
-	// --- Shared topbar chrome: the Daymark icon link and the Notifications
-	// icon button. Home shows the icon paired with the "Daymark" wordmark;
-	// Explore/Search/Me show it on its own, alongside their own screen
-	// title, since all four screens (plus Notifications, reached from the
-	// button below) share one persistent top-level chrome — this keeps a
-	// tap back to Timeline and a way to reach Notifications available from
-	// every one of them, matching the bottom nav's own always-present rows.
+	// --- Shared topbar chrome: the Daymark icon link. Home shows the icon
+	// paired with the "Daymark" wordmark; Explore, Notifications and Me show
+	// it on its own, alongside their own screen title, so a tap back to
+	// Timeline is in the same place on every one of them. Notifications
+	// used to be a bell here too; it is a tab in the bottom nav now.
 
 	function daymarkIconLink() {
 		return `<a class="daymark-iconbtn daymark-iconbtn--plain" href="#home" aria-label="${esc(
@@ -9085,7 +9184,7 @@
 	// icon (never the site's Site Icon, same as every other header chrome
 	// use of it) stands in for a second word alongside it, so the accessible
 	// name lives on the link itself instead. Shared by every screen that
-	// needs an explicit back destination (Notifications, the full-screen
+	// needs an explicit back destination (the composer, the full-screen
 	// post view) rather than each hand-rolling its own copy.
 	function backLinkWithIcon(hash, label) {
 		return `<a class="daymark-backlink daymark-backlink--icon" href="${esc(hash)}" aria-label="${esc(
@@ -9093,16 +9192,6 @@
 		)}"><span aria-hidden="true">&larr;</span><img src="${esc(
 			config.daymarkIconUrl || ''
 		)}" alt="" width="22" height="22" /></a>`;
-	}
-
-	function notificationsIconButton() {
-		const hasUnread = config.notifications && config.notifications.hasUnread;
-		return `<a class="daymark-iconbtn" href="#notifications" aria-label="${esc(
-			hasUnread ? __('Notifications — unread replies', 'daymark') : __('Notifications', 'daymark')
-		)}">
-			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
-			${hasUnread ? '<span class="daymark-iconbtn__dot" aria-hidden="true"></span>' : ''}
-		</a>`;
 	}
 
 	// A small bit of whimsy bookending the Timeline's own vertical rail (the
@@ -9409,7 +9498,6 @@
 				)}" title="${esc(__('Refresh Timeline', 'daymark'))}">
 					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${REFRESH_GLYPH}</svg>
 				</button>
-				${notificationsIconButton()}
 			</header>
 			<section class="daymark-screen" data-home-screen>
 				<div class="daymark-pullrefresh" data-pull-indicator aria-hidden="true">
@@ -10430,17 +10518,159 @@
 		},
 	};
 
-	// --- Screen: Search ---
+	// --- Screen: Explore (with Search) ---
 	//
-	// Universal search across Daymark content: the same GET /timeline query
-	// (keyword, type, source) Home's search bar used to run in place, now
-	// its own nav destination and route instead of a collapsible header bar
-	// — reachable, and refreshable, from anywhere in the app. Shares its
-	// result-list rendering and item interactions (⋯ edit/delete, the
-	// subscription-post detail sheet) with Home via the functions above,
-	// rather than reimplementing them.
+	// One tab for finding things. Search sits at the top: the search box
+	// and one row of filters, running the same GET /timeline query
+	// (keyword, type, source, date, tag, place) and sharing its result-list
+	// rendering and item interactions with Home via the functions above.
+	// With nothing typed and no filter chosen the screen is at rest, and
+	// shows what there is to explore, never a second Timeline: recent
+	// searches, the people you follow, your tags, Bookmarks, "On this day"
+	// (issue #294; real feed cards through the same shared pipeline as the
+	// results) and Following, where a site is starred or followed.
+	// Choosing any of them searches in place. Explore and Search were two
+	// tabs until issue #269's S5; "#search" still opens this screen.
 
-	const SearchScreen = {
+	// --- Search: starting screen and shortcuts (issue #269) ---
+
+	// How many followed sites the starting screen's People row shows
+	// (favorites first), how many shortcuts of each kind appear above the
+	// results, and how much must be typed before any do.
+	const SEARCH_START_PEOPLE = 30;
+	const SEARCH_SUGGESTIONS_PER_KIND = 3;
+	const SEARCH_SUGGEST_MIN_LENGTH = 2;
+
+	// Recent searches stay on this device, for this user, and are never
+	// sent anywhere. Five is enough to be useful and few enough to stay
+	// out of the way.
+	const RECENT_SEARCHES_MAX = 5;
+
+	const RECENT_GLYPH = '<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>';
+	const DISMISS_GLYPH = '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>';
+	const TAG_GLYPH =
+		'<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line>';
+	const CHEVRON_GLYPH = '<polyline points="9 18 15 12 9 6"></polyline>';
+
+	function searchRowIcon(glyph) {
+		return `<svg class="daymark-searchicon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${glyph}</svg>`;
+	}
+
+	// A person's picture, or their initial when they have none.
+	function searchAvatar(url, label, className) {
+		return url
+			? `<img class="${className}" src="${esc(url)}" alt="" loading="lazy" decoding="async" />`
+			: `<span class="${className} ${className}--glyph" aria-hidden="true">${esc(
+					String(label || '').trim().charAt(0).toUpperCase()
+			  )}</span>`;
+	}
+
+	function recentSearchesKey() {
+		return 'daymark:recent-searches:' + ((config.currentUser && config.currentUser.id) || 0);
+	}
+
+	// localStorage can throw (private browsing, storage disabled); with no
+	// storage there are simply no recent searches.
+	function recentSearches() {
+		try {
+			const saved = JSON.parse(window.localStorage.getItem(recentSearchesKey()) || '[]');
+			return Array.isArray(saved)
+				? saved.filter((query) => 'string' === typeof query && query).slice(0, RECENT_SEARCHES_MAX)
+				: [];
+		} catch (err) {
+			return [];
+		}
+	}
+
+	function saveRecentSearches(list) {
+		try {
+			if (list.length) {
+				window.localStorage.setItem(recentSearchesKey(), JSON.stringify(list));
+			} else {
+				window.localStorage.removeItem(recentSearchesKey());
+			}
+		} catch (err) {
+			// Nothing to do: recent searches are a convenience.
+		}
+	}
+
+	// Newest first, each search once whatever its capitals.
+	function rememberRecentSearch(value) {
+		const query = String(value || '').trim();
+		if (query.length < SEARCH_SUGGEST_MIN_LENGTH) {
+			return;
+		}
+		const rest = recentSearches().filter((saved) => saved.toLowerCase() !== query.toLowerCase());
+		saveRecentSearches([query].concat(rest).slice(0, RECENT_SEARCHES_MAX));
+	}
+
+	function forgetRecentSearch(value) {
+		saveRecentSearches(recentSearches().filter((saved) => saved !== value));
+	}
+
+	function clearRecentSearches() {
+		saveRecentSearches([]);
+	}
+
+	// The Date dropdown's choices. A month picked by name ('month:YYYY-MM')
+	// is added as a choice of its own so the closed dropdown can show it.
+	function dateOptionsMarkup(current) {
+		const picked = parseMonthFilter(current);
+		const options = SEARCH_DATE_FILTERS.map(
+			(filter) => `<option value="${esc(filter.key)}">${esc(filter.label)}</option>`
+		);
+		if (picked) {
+			options.push(
+				`<option value="${esc(current)}">${esc(
+					sprintf(
+						/* translators: 1: month name, 2: four-digit year. Together, a month such as "March 2024". */
+						__('%1$s %2$s', 'daymark'),
+						PHP_MONTH_NAMES[picked.month],
+						String(picked.year)
+					)
+				)}</option>`
+			);
+		}
+		options.push(`<option value="${SEARCH_DATE_PICK_MONTH}">${esc(__('Pick a month…', 'daymark'))}</option>`);
+		return options.join('');
+	}
+
+	// Makes a filter dropdown as wide as the choice it shows. A select is
+	// normally as wide as its longest choice, which on Search's one-row
+	// filters would push the type chips off the screen.
+	function fitSelectToChoice(select) {
+		if (!select || !select.isConnected || !select.options.length) {
+			return;
+		}
+		const option = select.options[select.selectedIndex];
+		const probe = document.createElement('span');
+		probe.className = 'daymark-sourcefilter daymark-sourcefilter--probe';
+		probe.setAttribute('aria-hidden', 'true');
+		probe.textContent = option ? option.textContent : '';
+		select.parentNode.appendChild(probe);
+		const width = probe.getBoundingClientRect().width;
+		probe.remove();
+		select.style.inlineSize = width ? Math.ceil(width) + 'px' : '';
+	}
+
+	// The years "Pick a month…" offers: this year back to the site's first
+	// post, and never fewer than ten, since a followed site's posts can
+	// be older than anything of your own. `include` keeps a year already
+	// picked on the list.
+	function searchYearOptionsMarkup(include) {
+		const thisYear = new Date().getFullYear();
+		let first = Math.min(Number(config.searchFirstYear) || thisYear, thisYear - 10);
+		if (include && include < first) {
+			first = include;
+		}
+		const years = [];
+		for (let year = thisYear; year >= first; year--) {
+			years.push(`<option value="${year}">${year}</option>`);
+		}
+		return years.join('');
+	}
+
+	const ExploreScreen = {
 		render() {
 			const filterChips = SEARCH_FILTERS.map(
 				(filter, index) =>
@@ -10453,34 +10683,46 @@
 			return `
 			<header class="daymark-topbar">
 				${daymarkIconLink()}
-				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Search', 'daymark'))}</h1>
-				${notificationsIconButton()}
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Explore', 'daymark'))}</h1>
 			</header>
 			<div class="daymark-searchbar daymark-searchbar--screen">
 				<label class="daymark-visually-hidden" for="daymark-search-input">${esc(
 					__('Search Daymark', 'daymark')
 				)}</label>
-				<input type="search" id="daymark-search-input" class="daymark-input" data-search-input placeholder="${esc(
-					__('Search your Marks and the sites you follow', 'daymark')
-				)}" autocomplete="off" />
+				<div class="daymark-searchrow">
+					<input type="search" id="daymark-search-input" class="daymark-input" data-search-input placeholder="${esc(
+						__('Search Marks and followed sites', 'daymark')
+					)}" autocomplete="off" />
+					<button type="button" class="daymark-searchsaved" data-explore-bookmarks aria-pressed="false" aria-label="${esc(
+						__('Bookmarks', 'daymark')
+					)}" title="${esc(__('Bookmarks', 'daymark'))}">${navIcon(BOOKMARK_GLYPH)}</button>
+				</div>
 				<div class="daymark-searchfilters" data-search-filters>
-					<div class="daymark-filterchips" role="group" aria-label="${esc(
-						__('Search filters', 'daymark')
-					)}" data-filter-chips>${filterChips}
 					<label class="daymark-visually-hidden" for="daymark-date-filter">${esc(
 						__('Filter by date', 'daymark')
 					)}</label>
-					<select id="daymark-date-filter" class="daymark-sourcefilter" data-date-filter>${SEARCH_DATE_FILTERS.map(
-						(filter) =>
-							`<option value="${esc(filter.key)}">${esc(filter.label)}</option>`
-					).join('')}</select>
-					</div>
+					<select id="daymark-date-filter" class="daymark-sourcefilter" data-date-filter>${dateOptionsMarkup(
+						''
+					)}</select>
 					<label class="daymark-visually-hidden" for="daymark-source-filter">${esc(
 						__('Filter by source', 'daymark')
 					)}</label>
 					<select id="daymark-source-filter" class="daymark-sourcefilter" data-source-filter>${sourceOptionsMarkup(
 						this._subscriptions
 					)}</select>
+					<div class="daymark-filterchips" role="group" aria-label="${esc(
+						__('Search filters', 'daymark')
+					)}" data-filter-chips>${filterChips}</div>
+				</div>
+				<div class="daymark-searchmonth" role="group" aria-label="${esc(
+					__('Pick a month', 'daymark')
+				)}" data-search-month hidden>
+					<label class="daymark-visually-hidden" for="daymark-search-month">${esc(__('Month', 'daymark'))}</label>
+					<select id="daymark-search-month" class="daymark-sourcefilter" data-search-month-name>${PHP_MONTH_NAMES.map(
+						(name, index) => `<option value="${index}">${esc(name)}</option>`
+					).join('')}</select>
+					<label class="daymark-visually-hidden" for="daymark-search-year">${esc(__('Year', 'daymark'))}</label>
+					<select id="daymark-search-year" class="daymark-sourcefilter" data-search-month-year>${searchYearOptionsMarkup()}</select>
 				</div>
 			</div>
 			<section class="daymark-screen">
@@ -10490,7 +10732,51 @@
 						__('Show everything', 'daymark')
 					)}</button>
 				</p>
-				<section class="daymark-recent" aria-labelledby="daymark-search-results-heading">
+				<p class="daymark-searchbookmarks-banner" data-search-scope-banner hidden>
+					<span data-search-scope-text></span>
+					<button type="button" class="daymark-btn daymark-btn--text" data-search-clear-scope>${esc(
+						__('Show everything', 'daymark')
+					)}</button>
+				</p>
+				<div class="daymark-searchstart" data-search-start hidden></div>
+				<div class="daymark-exploresections" data-explore-sections hidden>
+					<section class="daymark-recent" aria-labelledby="daymark-explore-memories-heading">
+						<h2 id="daymark-explore-memories-heading" class="daymark-section-heading">${esc(
+							__('On this day', 'daymark')
+						)}</h2>
+						<div class="daymark-recent__list" data-explore-memories>
+							${skeletonRows(2)}
+							<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
+						</div>
+					</section>
+					<section class="daymark-recent" aria-labelledby="daymark-explore-following-heading">
+						<div class="daymark-follow__heading">
+							<h2 id="daymark-explore-following-heading" class="daymark-section-heading">${esc(
+								__('Following', 'daymark')
+							)}</h2>
+							${
+								config.canManageSubscriptions
+									? `<button type="button" class="daymark-btn daymark-btn--secondary daymark-follow__open" data-follow-site>${esc(
+											__('+ Follow a site', 'daymark')
+									  )}</button>`
+									: ''
+							}
+						</div>
+						${
+							config.canManageSubscriptions
+								? `<p class="daymark-field__help">${esc(
+										__('Star a site to check it every hour and get a notification when it posts.', 'daymark')
+								  )}</p>`
+								: ''
+						}
+						<div class="daymark-recent__list" data-explore-following>
+							${skeletonRows(2)}
+							<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
+						</div>
+					</section>
+				</div>
+				<div class="daymark-searchsuggest" data-search-suggest hidden></div>
+				<section class="daymark-recent" aria-labelledby="daymark-search-results-heading" data-search-results-section>
 					<h2 id="daymark-search-results-heading" class="daymark-visually-hidden">${esc(__('Results', 'daymark'))}</h2>
 					<p class="daymark-searchcount" data-search-count aria-live="polite" hidden></p>
 					<div class="daymark-recent__list" data-search-results>
@@ -10501,7 +10787,7 @@
 					<p class="daymark-recent__more" data-search-more hidden></p>
 				</section>
 			</section>
-			${navFooterMarkup('search')}`;
+			${navFooterMarkup('explore')}`;
 		},
 
 		bindEvents() {
@@ -10513,6 +10799,13 @@
 			if (sourceFilter) {
 				sourceFilter.addEventListener('change', () => {
 					this.searchSource = sourceFilter.value;
+					// Only your own posts have a tag or a Check In place,
+					// so choosing a followed site lets go of either.
+					if (this.searchSource && 'mine' !== this.searchSource) {
+						this.searchTag = null;
+						this.searchPlace = '';
+						this.syncScopeBanner();
+					}
 					this.runSearch();
 				});
 			}
@@ -10524,12 +10817,56 @@
 					this.searchQuery = input.value.trim();
 					runDebounced();
 				});
+				// A search counts as made once the box is left or the
+				// keyboard's Search key is pressed, not on every letter.
+				input.addEventListener('change', () => rememberRecentSearch(input.value));
 			}
 
 			const dateFilter = root.querySelector('[data-date-filter]');
 			if (dateFilter) {
 				dateFilter.addEventListener('change', () => {
+					if (SEARCH_DATE_PICK_MONTH === dateFilter.value) {
+						this.showMonthPicker();
+						return;
+					}
 					this.searchDate = dateFilter.value;
+					this.syncSearchExtras();
+					this.runSearch();
+				});
+			}
+
+			// "Pick a month…": a month and a year, applied as soon as
+			// either changes.
+			const monthName = root.querySelector('[data-search-month-name]');
+			const monthYear = root.querySelector('[data-search-month-year]');
+			if (monthName && monthYear) {
+				const applyMonth = () => {
+					this.searchDate = monthFilterKey(Number(monthYear.value), Number(monthName.value));
+					this.syncSearchExtras();
+					this.runSearch();
+				};
+				monthName.addEventListener('change', applyMonth);
+				monthYear.addEventListener('change', applyMonth);
+			}
+
+			// The starting screen's recent searches, people and tags.
+			const start = root.querySelector('[data-search-start]');
+			if (start) {
+				start.addEventListener('click', (event) => this.onStartClick(event));
+			}
+
+			// The shortcuts above the results: a person, a tag, a place.
+			const suggest = root.querySelector('[data-search-suggest]');
+			if (suggest) {
+				suggest.addEventListener('click', (event) => this.onSuggestClick(event));
+			}
+
+			const clearScope = root.querySelector('[data-search-clear-scope]');
+			if (clearScope) {
+				clearScope.addEventListener('click', () => {
+					this.searchTag = null;
+					this.searchPlace = '';
+					this.syncScopeBanner();
 					this.runSearch();
 				});
 			}
@@ -10537,6 +10874,43 @@
 			const list = root.querySelector('[data-search-results]');
 			if (list) {
 				list.addEventListener('click', (event) => onFeedListClick(this, event));
+			}
+
+			// Bookmarks sits beside the search box, so it is one tap away
+			// without scrolling. It switches your bookmarks on and off, and
+			// works together with the words and filters like any of them.
+			const bookmarksBtn = root.querySelector('[data-explore-bookmarks]');
+			if (bookmarksBtn) {
+				bookmarksBtn.addEventListener('click', () => {
+					this.searchBookmarked = !this.searchBookmarked;
+					this.syncBookmarksBanner();
+					this.runSearch();
+				});
+			}
+
+			// "On this day" renders real feed cards (renderFeedItem), so it
+			// gets the same delegated handler as the results list: card
+			// taps open the post view, and the stat-row toggles work.
+			const memories = root.querySelector('[data-explore-memories]');
+			if (memories) {
+				memories.addEventListener('click', (event) => onFeedListClick(this, event));
+			}
+
+			const following = root.querySelector('[data-explore-following]');
+			if (following) {
+				following.addEventListener('click', (event) => {
+					const star = event.target.closest('[data-favorite-toggle]');
+					if (star) {
+						toggleFavoriteSite(star);
+						return;
+					}
+					const trigger = event.target.closest('[data-explore-subscription]');
+					if (!trigger) {
+						return;
+					}
+					this.chooseSource(trigger.getAttribute('data-explore-subscription'));
+					this.focusResultsFromTop();
+				});
 			}
 
 			const more = root.querySelector('[data-search-more]');
@@ -10570,17 +10944,29 @@
 			this.searchSource = '';
 			this.searchBookmarked = false;
 			this.searchDate = '';
+			// One exact tag ({ id, name }) or Check In place, set from a
+			// shortcut (issue #269).
+			this.searchTag = null;
+			this.searchPlace = '';
+			// The most-used tags and the followed sites are kept from the
+			// last visit and shown at once, then refreshed. Coming back
+			// from an "On this day" card, the sections above it are then
+			// already their full height, so the card doesn't move.
+			this._topTags = this._topTags || null;
+			this._subscriptions = this._subscriptions || [];
+			this._suggestions = null;
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
-			this._subscriptions = [];
-			// The results currently shown — what saveFeedSnapshot()
+			// The cards currently shown: the results, or at rest the "On
+			// this day" cards (kept in _memories). What saveFeedSnapshot()
 			// captures when a card opens.
 			this._items = [];
+			this._memories = [];
 
 			// Coming back from a post opened here: restore the same
 			// filters and results, and the card's place, instead of
 			// searching again from the top (see feedSnapshot).
-			const snapshot = takeFeedSnapshot('#search');
+			const snapshot = takeFeedSnapshot('#explore');
 			if (snapshot) {
 				searchPreset = null;
 				this.searchQuery = snapshot.query || '';
@@ -10588,12 +10974,13 @@
 				this.searchSource = snapshot.source || '';
 				this.searchBookmarked = !!snapshot.bookmarked;
 				this.searchDate = snapshot.date || '';
+				this.searchTag = snapshot.tag || null;
+				this.searchPlace = snapshot.place || '';
 			}
 
-			// A preset handed from Explore/Me ("browse by type", "your
-			// Marks", "Following", "Bookmarks") right before navigate('#search')
-			// — the same one-shot pattern state.pendingType already uses for
-			// the composer.
+			// A preset handed over right before navigate('#explore') ("My
+			// marks" on Me, a card's site icon) — the same one-shot
+			// pattern state.pendingType already uses for the composer.
 			if (searchPreset) {
 				this.searchType = searchPreset.type || '';
 				this.searchSource = searchPreset.source || '';
@@ -10604,18 +10991,148 @@
 
 			this.syncFilterChips();
 			this.syncBookmarksBanner();
+			this.syncScopeBanner();
 			this.syncSearchExtras();
 			const input = root.querySelector('[data-search-input]');
 			if (input && this.searchQuery) {
 				input.value = this.searchQuery;
 			}
 
+			if (this._subscriptionsLoaded) {
+				this.renderFollowing();
+			}
 			this.loadSubscriptionsForFilter();
-			if (snapshot) {
+			this.loadTopTags();
+			if (snapshot && !this.isIdle()) {
+				// Back from a result: the same results, without asking
+				// again. "On this day" loads behind them, for when the
+				// search is cleared.
+				this.showStart(false);
+				this.fitFilters();
 				this.restoreSnapshot(snapshot);
+				this.loadMemories();
 				return;
 			}
+			if (snapshot) {
+				// Back from an "On this day" card: the same cards, and the
+				// opened one back in its place instead of the top.
+				this.showMemories(snapshot.items.slice());
+				await this.runSearch();
+				// showScreen() focuses the header right after init()
+				// starts, which scrolls to the top. Position the card after.
+				requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
+				return;
+			}
+			// Deliberately kicked off and left running, not awaited: the
+			// memories and everything else here load independently, and
+			// one failing never blocks another.
+			this.loadMemories();
 			await this.runSearch();
+		},
+
+		// Fills "On this day" with these cards, or takes the section away
+		// when there are none. At rest they are the screen's cards, so a
+		// tap can hand openPostView() its item.
+		showMemories(items) {
+			this._memories = Array.isArray(items) ? items : [];
+			const list = root.querySelector('[data-explore-memories]');
+			if (!list || !list.isConnected) {
+				return;
+			}
+			if (!this._memories.length) {
+				list.closest('section').remove();
+			} else {
+				list.innerHTML = this._memories.map((item) => renderFeedItem(item)).join('');
+			}
+			if (this.isIdle()) {
+				this.useMemoriesAsItems();
+			}
+		},
+
+		useMemoriesAsItems() {
+			this._bySubId.clear();
+			this._byMarkId.clear();
+			this._items = this._memories.slice();
+			this._items.forEach((item) => rememberItem(this, item));
+		},
+
+		// GET /timeline?on_this_day=1: the Marks published on today's
+		// calendar date in a prior year (issue #294). No group headers (the
+		// section has its own heading). A failed fetch shows an inline
+		// error in the section; nothing found removes it.
+		async loadMemories() {
+			const list = root.querySelector('[data-explore-memories]');
+			if (!list) {
+				return;
+			}
+			let items;
+			try {
+				items = await apiGet('timeline?on_this_day=1&per_page=50');
+			} catch (err) {
+				if (list.isConnected) {
+					list.innerHTML =
+						'<p class="daymark-error" role="alert">' +
+						esc(__("Couldn't load your memories. Try again in a moment.", 'daymark')) +
+						'</p>';
+				}
+				return;
+			}
+			if (!list.isConnected) {
+				return;
+			}
+			this.showMemories(Array.isArray(items) ? items : []);
+		},
+
+		// The Following list: every followed site, favorites first, then A
+		// to Z, each with its star for someone who can manage follows.
+		// Tapping a site shows its posts.
+		renderFollowing() {
+			const list = root.querySelector('[data-explore-following]');
+			if (!list || !list.isConnected) {
+				return;
+			}
+			const subscriptions = this._subscriptions || [];
+			if (!subscriptions.length) {
+				list.innerHTML = config.canManageSubscriptions
+					? `<p class="daymark-empty">${esc(
+							__("You're not following any sites yet. Tap Follow a site to see a site's posts here.", 'daymark')
+					  )}</p>`
+					: `<p class="daymark-empty">${esc(__("You're not following any sites yet.", 'daymark'))}</p>`;
+				return;
+			}
+			const subscriptionLabel = (sub) =>
+				sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url;
+			list.innerHTML = subscriptions
+				.slice()
+				.sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || subscriptionLabel(a).localeCompare(subscriptionLabel(b)))
+				.map((sub) => {
+					const label = subscriptionLabel(sub);
+					const icon = sub.site_icon_url
+						? `<img class="daymark-recent__thumb" src="${esc(sub.site_icon_url)}" alt="" />`
+						: `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
+								label.charAt(0).toUpperCase()
+						  )}</span>`;
+					const open = `<button type="button" class="daymark-recent__item daymark-recent__item--button" data-explore-subscription="${esc(
+						String(sub.id)
+					)}">${icon}<span class="daymark-recent__body"><span class="daymark-recent__title">${esc(
+						label
+					)}</span></span></button>`;
+					if (!config.canManageSubscriptions) {
+						return open;
+					}
+					return `<div class="daymark-follow__row">${open}${favoriteToggleMarkup(sub.id, label, !!sub.favorite)}</div>`;
+				})
+				.join('');
+		},
+
+		// A choice made far down the starting screen (a followed site)
+		// puts its results at the top, so go there.
+		focusResultsFromTop() {
+			window.scrollTo(0, 0);
+			const heading = root.querySelector('[data-daymark-focus]');
+			if (heading) {
+				heading.focus({ preventScroll: true });
+			}
 		},
 
 		// Re-render the saved results rather than searching again, so the
@@ -10648,6 +11165,11 @@
 				const active = (chip.getAttribute('data-filter') || '') === this.searchType;
 				chip.classList.toggle('is-active', active);
 				chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+				// The row scrolls sideways, so a type chosen elsewhere
+				// (a preset from another screen) may start off screen.
+				if (active && this.searchType && 'function' === typeof chip.scrollIntoView) {
+					chip.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+				}
 			});
 		},
 
@@ -10662,16 +11184,440 @@
 			if (banner) {
 				banner.hidden = !this.searchBookmarked;
 			}
+			const button = root.querySelector('[data-explore-bookmarks]');
+			if (button) {
+				button.setAttribute('aria-pressed', this.searchBookmarked ? 'true' : 'false');
+			}
 		},
 
-		// Reflects the current date filter value back onto its control —
-		// called at boot so a fresh render shows any state searchPreset may
-		// have been carrying. Explore hands over type/source only today, so
-		// this is effectively a no-op until a future preset carries a date.
+		// Shows which exact tag or place the results are narrowed to, with
+		// the way back out. Bookmarks has its own line, above.
+		syncScopeBanner() {
+			const banner = root.querySelector('[data-search-scope-banner]');
+			const text = root.querySelector('[data-search-scope-text]');
+			if (!banner || !text) {
+				return;
+			}
+			if (this.searchTag) {
+				text.textContent = sprintf(
+					/* translators: %s: a tag's name */
+					__('Showing Marks tagged %s.', 'daymark'),
+					this.searchTag.name
+				);
+			} else if (this.searchPlace) {
+				text.textContent = sprintf(
+					/* translators: %s: a place's name */
+					__('Showing Check Ins at %s.', 'daymark'),
+					this.searchPlace
+				);
+			}
+			banner.hidden = !this.searchTag && !this.searchPlace;
+		},
+
+		// Reflects the current date filter back onto its controls: the
+		// dropdown (with a picked month added as a choice of its own, so
+		// the pill can name it) and the month and year beside it.
 		syncSearchExtras() {
 			const date = root.querySelector('[data-date-filter]');
-			if (date && date.value !== this.searchDate) {
+			if (date) {
+				date.innerHTML = dateOptionsMarkup(this.searchDate);
 				date.value = this.searchDate;
+			}
+			const picked = parseMonthFilter(this.searchDate);
+			const row = root.querySelector('[data-search-month]');
+			if (row) {
+				row.hidden = !picked;
+			}
+			if (picked) {
+				const monthName = root.querySelector('[data-search-month-name]');
+				const monthYear = root.querySelector('[data-search-month-year]');
+				if (monthName) {
+					monthName.value = String(picked.month);
+				}
+				if (monthYear) {
+					monthYear.innerHTML = searchYearOptionsMarkup(picked.year);
+					monthYear.value = String(picked.year);
+				}
+			}
+		},
+
+		// "Pick a month…" was chosen: start on the newest month the
+		// choices above it don't already cover, and let the two
+		// dropdowns take it from there.
+		showMonthPicker() {
+			const now = new Date();
+			const start = parseMonthFilter(this.searchDate) || {
+				year: new Date(now.getFullYear(), now.getMonth() - 2, 1).getFullYear(),
+				month: new Date(now.getFullYear(), now.getMonth() - 2, 1).getMonth(),
+			};
+			this.searchDate = monthFilterKey(start.year, start.month);
+			this.syncSearchExtras();
+			this.runSearch();
+			const monthName = root.querySelector('[data-search-month-name]');
+			if (monthName) {
+				monthName.focus();
+			}
+		},
+
+		fitFilters() {
+			fitSelectToChoice(root.querySelector('[data-date-filter]'));
+			fitSelectToChoice(root.querySelector('[data-source-filter]'));
+		},
+
+		// Nothing typed and nothing chosen: Explore is at rest and shows
+		// what there is to explore, not a second copy of the Timeline
+		// (issue #269).
+		isIdle() {
+			return (
+				!this.searchQuery &&
+				!this.searchType &&
+				!this.searchSource &&
+				!this.searchBookmarked &&
+				!this.searchDate &&
+				!this.searchTag &&
+				!this.searchPlace
+			);
+		},
+
+		// Swaps between the screen at rest (the starting screen and the
+		// sections under it) and the results.
+		showStart(show) {
+			const start = root.querySelector('[data-search-start]');
+			const sections = root.querySelector('[data-explore-sections]');
+			const results = root.querySelector('[data-search-results-section]');
+			if (start) {
+				start.hidden = !show;
+			}
+			if (sections) {
+				sections.hidden = !show;
+			}
+			if (results) {
+				results.hidden = show;
+			}
+			if (show) {
+				this.renderSuggestions(null);
+			}
+		},
+
+		// The starting screen: recent searches, the people you follow, and
+		// your most used tags. Each part is left out when it has nothing.
+		renderStart() {
+			const start = root.querySelector('[data-search-start]');
+			if (!start) {
+				return;
+			}
+			const recent = recentSearches();
+			const recentHtml = recent.length
+				? `<section class="daymark-searchstart__section" aria-labelledby="daymark-search-recent-heading">
+					<h2 id="daymark-search-recent-heading" class="daymark-section-heading">${esc(__('Recent searches', 'daymark'))}</h2>
+					<ul class="daymark-searchstart__recent">${recent
+						.map(
+							(query) =>
+								`<li class="daymark-searchstart__recentrow"><button type="button" class="daymark-searchstart__recentbtn" data-recent-search="${esc(
+									query
+								)}">${searchRowIcon(RECENT_GLYPH)}<span>${esc(query)}</span></button><button type="button" class="daymark-searchstart__forget" data-recent-forget="${esc(
+									query
+								)}" aria-label="${esc(
+									sprintf(
+										/* translators: %s: a past search */
+										__('Remove %s from recent searches', 'daymark'),
+										query
+									)
+								)}">${searchRowIcon(DISMISS_GLYPH)}</button></li>`
+						)
+						.join('')}</ul>
+				</section>`
+				: '';
+
+			const user = config.currentUser || {};
+			const label = (sub) => (sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url);
+			const people = [{ source: 'mine', label: __('You', 'daymark'), icon: user.avatarUrl || '' }].concat(
+				(this._subscriptions || [])
+					.slice()
+					.sort(
+						(a, b) =>
+							Number(!!b.favorite) - Number(!!a.favorite) ||
+							label(a).localeCompare(label(b), undefined, { sensitivity: 'base' })
+					)
+					.slice(0, SEARCH_START_PEOPLE)
+					.map((sub) => ({ source: String(sub.id), label: label(sub), icon: sub.site_icon_url || '' }))
+			);
+			const peopleHtml = `<section class="daymark-searchstart__section" aria-labelledby="daymark-search-people-heading">
+					<h2 id="daymark-search-people-heading" class="daymark-section-heading">${esc(__('People', 'daymark'))}</h2>
+					<ul class="daymark-searchstart__people">${people
+						.map(
+							(person) =>
+								`<li><button type="button" class="daymark-searchstart__person" data-start-source="${esc(
+									person.source
+								)}">${searchAvatar(person.icon, person.label, 'daymark-searchstart__avatar')}<span class="daymark-searchstart__name">${esc(
+									person.label
+								)}</span></button></li>`
+						)
+						.join('')}</ul>
+				</section>`;
+
+			const tags = Array.isArray(this._topTags) ? this._topTags : [];
+			const tagsHtml = tags.length
+				? `<section class="daymark-searchstart__section" aria-labelledby="daymark-search-tags-heading">
+					<h2 id="daymark-search-tags-heading" class="daymark-section-heading">${esc(__('Your tags', 'daymark'))}</h2>
+					<div class="daymark-searchstart__tags">${tags
+						.map(
+							(tag) =>
+								`<button type="button" class="daymark-filterchip" data-start-tag="${esc(
+									String(tag.id)
+								)}" data-tag-name="${esc(tag.name)}">${esc(
+									sprintf(
+										/* translators: %s: a tag's name. The # marks it as a tag. */
+										__('#%s', 'daymark'),
+										tag.name
+									)
+								)}</button>`
+						)
+						.join('')}</div>
+				</section>`
+				: '';
+
+			start.innerHTML = recentHtml + peopleHtml + tagsHtml;
+		},
+
+		onStartClick(event) {
+			const forget = event.target.closest('[data-recent-forget]');
+			if (forget) {
+				forgetRecentSearch(forget.getAttribute('data-recent-forget'));
+				this.renderStart();
+				const next = root.querySelector('[data-recent-forget], [data-search-input]');
+				if (next) {
+					next.focus();
+				}
+				return;
+			}
+			const recent = event.target.closest('[data-recent-search]');
+			if (recent) {
+				this.searchQuery = recent.getAttribute('data-recent-search');
+				const input = root.querySelector('[data-search-input]');
+				if (input) {
+					input.value = this.searchQuery;
+				}
+				rememberRecentSearch(this.searchQuery);
+				this.runSearch();
+				return;
+			}
+			const person = event.target.closest('[data-start-source]');
+			if (person) {
+				this.chooseSource(person.getAttribute('data-start-source'));
+				return;
+			}
+			const tag = event.target.closest('[data-start-tag]');
+			if (tag) {
+				this.chooseTag(Number(tag.getAttribute('data-start-tag')), tag.getAttribute('data-tag-name'));
+			}
+		},
+
+		// The three shortcut taps. Each one answers the question the
+		// typed words were asking, so the words are cleared.
+		clearQuery() {
+			this.searchQuery = '';
+			const input = root.querySelector('[data-search-input]');
+			if (input) {
+				input.value = '';
+			}
+		},
+
+		chooseSource(source) {
+			this.clearQuery();
+			this.searchSource = source || '';
+			const select = root.querySelector('[data-source-filter]');
+			if (select) {
+				select.value = this.searchSource;
+			}
+			if (this.searchSource && 'mine' !== this.searchSource) {
+				this.searchTag = null;
+				this.searchPlace = '';
+			}
+			this.syncScopeBanner();
+			this.runSearch();
+		},
+
+		// Only your own posts have tags or places, so a followed site
+		// chosen earlier is let go of.
+		chooseTag(id, name) {
+			this.clearQuery();
+			this.searchTag = id ? { id, name: name || '' } : null;
+			this.searchPlace = '';
+			this.dropFollowedSource();
+			this.syncScopeBanner();
+			this.runSearch();
+		},
+
+		choosePlace(name) {
+			this.clearQuery();
+			this.searchPlace = name || '';
+			this.searchTag = null;
+			this.dropFollowedSource();
+			this.syncScopeBanner();
+			this.runSearch();
+		},
+
+		dropFollowedSource() {
+			if (this.searchSource && 'mine' !== this.searchSource) {
+				this.searchSource = '';
+				const select = root.querySelector('[data-source-filter]');
+				if (select) {
+					select.value = '';
+				}
+			}
+		},
+
+		onSuggestClick(event) {
+			const row = event.target.closest('[data-suggest]');
+			if (!row) {
+				return;
+			}
+			const kind = row.getAttribute('data-suggest');
+			if ('person' === kind) {
+				this.chooseSource(row.getAttribute('data-suggest-source'));
+			} else if ('tag' === kind) {
+				this.chooseTag(Number(row.getAttribute('data-suggest-tag')), row.getAttribute('data-suggest-name'));
+			} else if ('place' === kind) {
+				this.choosePlace(row.getAttribute('data-suggest-name'));
+			}
+			const input = root.querySelector('[data-search-input]');
+			if (input) {
+				input.focus();
+			}
+		},
+
+		// The people whose name holds what was typed: you, then the sites
+		// you follow. Matched here, from the list Search already has,
+		// with the same "name contains" rule the server uses to find
+		// their posts.
+		matchingPeople(query) {
+			const needle = query.toLowerCase();
+			const user = config.currentUser || {};
+			const people = [];
+			if (user.displayName && user.displayName.toLowerCase().includes(needle)) {
+				people.push({ source: 'mine', label: user.displayName, icon: user.avatarUrl || '', mine: true });
+			}
+			(this._subscriptions || []).forEach((sub) => {
+				const title = sub.site_title && sub.site_title.trim() ? sub.site_title : '';
+				if (title && title.toLowerCase().includes(needle)) {
+					people.push({ source: String(sub.id), label: title, icon: sub.site_icon_url || '', mine: false });
+				}
+			});
+			return people.slice(0, SEARCH_SUGGESTIONS_PER_KIND);
+		},
+
+		// The shortcuts above the results for what is typed: a person
+		// whose posts to see, a tag, a Check In place. `found` is GET
+		// /search/suggestions' answer, or null to clear the block. A kind
+		// already chosen isn't offered again.
+		renderSuggestions(found) {
+			const block = root.querySelector('[data-search-suggest]');
+			if (!block) {
+				return;
+			}
+			this._suggestions = found;
+			const query = this.searchQuery;
+			if (!found || query.length < SEARCH_SUGGEST_MIN_LENGTH) {
+				block.hidden = true;
+				block.innerHTML = '';
+				return;
+			}
+			const chevron = searchRowIcon(CHEVRON_GLYPH);
+			const rows = [];
+			if (!this.searchSource && !this.searchTag && !this.searchPlace) {
+				this.matchingPeople(query).forEach((person) => {
+					rows.push(
+						`<button type="button" class="daymark-searchsuggest__row" data-suggest="person" data-suggest-source="${esc(
+							person.source
+						)}">${searchAvatar(person.icon, person.label, 'daymark-searchsuggest__figure')}<span class="daymark-searchsuggest__body"><span class="daymark-searchsuggest__title">${esc(
+							person.label
+						)}</span><span class="daymark-searchsuggest__meta">${esc(
+							person.mine ? __('You · see all your Marks', 'daymark') : __('Someone you follow · see all their posts', 'daymark')
+						)}</span></span>${chevron}</button>`
+					);
+				});
+			}
+			if (!this.searchTag && !this.searchPlace) {
+				(Array.isArray(found.tags) ? found.tags : []).forEach((tag) => {
+					rows.push(
+						`<button type="button" class="daymark-searchsuggest__row" data-suggest="tag" data-suggest-tag="${esc(
+							String(tag.id)
+						)}" data-suggest-name="${esc(tag.name)}"><span class="daymark-searchsuggest__figure daymark-searchsuggest__figure--glyph" aria-hidden="true">${searchRowIcon(
+							TAG_GLYPH
+						)}</span><span class="daymark-searchsuggest__body"><span class="daymark-searchsuggest__title">${esc(
+							sprintf(
+								/* translators: %s: a tag's name. The # marks it as a tag. */
+								__('#%s', 'daymark'),
+								tag.name
+							)
+						)}</span><span class="daymark-searchsuggest__meta">${esc(
+							sprintf(
+								/* translators: %d: number of Marks with this tag */
+								_n('Tag · %d Mark', 'Tag · %d Marks', tag.count, 'daymark'),
+								tag.count
+							)
+						)}</span></span>${chevron}</button>`
+					);
+				});
+				(Array.isArray(found.places) ? found.places : []).forEach((place) => {
+					rows.push(
+						`<button type="button" class="daymark-searchsuggest__row" data-suggest="place" data-suggest-name="${esc(
+							place.name
+						)}"><span class="daymark-searchsuggest__figure daymark-searchsuggest__figure--glyph" aria-hidden="true">${searchRowIcon(
+							TYPE_ICONS.checkin
+						)}</span><span class="daymark-searchsuggest__body"><span class="daymark-searchsuggest__title">${esc(
+							place.name
+						)}</span><span class="daymark-searchsuggest__meta">${esc(
+							sprintf(
+								/* translators: %d: number of Check In Marks at this place */
+								_n('Place · %d Check In', 'Place · %d Check Ins', place.count, 'daymark'),
+								place.count
+							)
+						)}</span></span>${chevron}</button>`
+					);
+				});
+			}
+			block.innerHTML = rows.join('');
+			block.hidden = !rows.length;
+		},
+
+		// Asks for the tags and places matching what is typed. Runs beside
+		// the search itself and never holds it up; a failure only means no
+		// shortcuts this time.
+		async loadSuggestions(seq) {
+			const query = this.searchQuery;
+			if (query.length < SEARCH_SUGGEST_MIN_LENGTH) {
+				this.renderSuggestions(null);
+				return;
+			}
+			let found = { tags: [], places: [] };
+			try {
+				const result = await apiGet('search/suggestions?q=' + encodeURIComponent(query));
+				if (result && 'object' === typeof result) {
+					found = result;
+				}
+			} catch (err) {
+				// People still match from the list already loaded.
+			}
+			if (seq !== this._searchSeq || !root.querySelector('[data-search-suggest]')) {
+				return;
+			}
+			this.renderSuggestions(found);
+		},
+
+		// The most used tags, for the starting screen. Asked for once per
+		// visit to Search.
+		async loadTopTags() {
+			try {
+				const result = await apiGet('search/suggestions');
+				this._topTags = result && Array.isArray(result.tags) ? result.tags : [];
+			} catch (err) {
+				this._topTags = [];
+			}
+			const start = root.querySelector('[data-search-start]');
+			if (start && start.isConnected && !start.hidden) {
+				this.renderStart();
 			}
 		},
 
@@ -10680,10 +11626,22 @@
 		// the dropdown just renders "All sites"/"My marks" until this resolves.
 		async loadSubscriptionsForFilter() {
 			this._subscriptions = await fetchSubscriptions();
+			this._subscriptionsLoaded = true;
+			this.renderFollowing();
 			const select = root.querySelector('[data-source-filter]');
 			if (select && select.isConnected) {
 				select.innerHTML = sourceOptionsMarkup(this._subscriptions);
 				select.value = this.searchSource;
+				fitSelectToChoice(select);
+			}
+			// Both name people from this list, and may be on screen
+			// already.
+			const start = root.querySelector('[data-search-start]');
+			if (start && start.isConnected && !start.hidden) {
+				this.renderStart();
+			}
+			if (this._suggestions) {
+				this.renderSuggestions(this._suggestions);
 			}
 		},
 
@@ -10705,6 +11663,12 @@
 			}
 			if (this.searchBookmarked) {
 				params.set('bookmarked', '1');
+			}
+			if (this.searchTag) {
+				params.set('tag', String(this.searchTag.id));
+			}
+			if (this.searchPlace) {
+				params.set('place', this.searchPlace);
 			}
 			if (this.searchDate) {
 				const bounds = dateFilterBounds(this.searchDate);
@@ -10842,10 +11806,27 @@
 			this.teardownSearchObserver();
 			this._searchLoading = false;
 			this._searchDone = true;
+			// Every filter change comes through here.
+			this.fitFilters();
 			const more = root.querySelector('[data-search-more]');
 			if (more) {
 				more.hidden = true;
 			}
+			// Nothing typed or chosen: the starting screen, not a search.
+			if (this.isIdle()) {
+				teardownLikeAvailabilityObserver(this);
+				teardownFeaturedImages(this);
+				// At rest the "On this day" cards are the screen's cards.
+				this.useMemoriesAsItems();
+				this._searchParams = '';
+				list.innerHTML = '';
+				this.showResultCount(null);
+				this.renderStart();
+				this.showStart(true);
+				return;
+			}
+			this.showStart(false);
+			this.loadSuggestions(seq);
 			list.innerHTML =
 				skeletonRows(2) + '<span class="daymark-visually-hidden">' + esc(__('Searching', 'daymark')) + '</span>';
 			// Targets the merged Timeline endpoint (not /marks) so a search
@@ -10853,9 +11834,8 @@
 			// narrows that down to just Marks (`mine=1`) or just one
 			// subscription's posts (`subscription_id`). No `status` param:
 			// unlike /marks, /timeline always returns published-only from
-			// both sources already. An empty query with no filters still
-			// runs — it's "everything", the same default Home's own first
-			// page shows.
+			// both sources already. An empty query with a filter chosen
+			// still runs: it's everything that filter allows.
 			const filters = this.buildSearchParams();
 			this._searchParams = filters.toString();
 			this._searchPage = 1;
@@ -10953,249 +11933,6 @@
 				return;
 			}
 			list.innerHTML = items.map((item) => renderFeedItem(item)).join('');
-		},
-	};
-
-	// --- Screen: Explore ---
-	//
-	// A first, deliberately non-chronological browsing destination — never
-	// a second Timeline. Every section here is real, built entirely on
-	// data the plugin already exposes (Mark type filtering, bookmark
-	// state, prior-year same-date Marks, active subscriptions): "Browse by
-	// type", "Bookmarks", "On this day", and "Following". The preset
-	// sections hand results off to Search rather than duplicating its
-	// rendering; "On this day" (issue #294) and "Following" render their
-	// own card lists in place, with "On this day" reusing the shared
-	// feed-item pipeline (renderFeedItem()/rememberItem()/onFeedListClick)
-	// exactly like Search's own results list. Highlights, collections,
-	// favorites, and suggested content are future sections on this same
-	// screen, not implied by anything rendered here.
-
-	const ExploreScreen = {
-		render() {
-			const typeButtons = LAUNCHER_TYPES.map(
-				(type) =>
-					`<button type="button" class="daymark-exploretype" data-explore-type="${type}">${navIcon(
-						TYPE_ICONS[type]
-					)}<span>${esc(TYPE_LABELS[type])}</span></button>`
-			).join('');
-			return `
-			<header class="daymark-topbar">
-				${daymarkIconLink()}
-				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Explore', 'daymark'))}</h1>
-				${notificationsIconButton()}
-			</header>
-			<section class="daymark-screen">
-				<section class="daymark-recent" aria-labelledby="daymark-explore-types-heading">
-					<h2 id="daymark-explore-types-heading" class="daymark-section-heading">${esc(
-						__('Browse by type', 'daymark')
-					)}</h2>
-					<div class="daymark-exploretypes">${typeButtons}</div>
-				</section>
-				<section class="daymark-recent" aria-labelledby="daymark-explore-bookmarks-heading">
-					<h2 id="daymark-explore-bookmarks-heading" class="daymark-section-heading">${esc(
-						__('Bookmarks', 'daymark')
-					)}</h2>
-					<div class="daymark-exploretypes">
-						<button type="button" class="daymark-exploretype" data-explore-bookmarks>${navIcon(
-							BOOKMARK_GLYPH
-						)}<span>${esc(__('Saved for offline', 'daymark'))}</span></button>
-					</div>
-				</section>
-				<section class="daymark-recent" aria-labelledby="daymark-explore-memories-heading">
-					<h2 id="daymark-explore-memories-heading" class="daymark-section-heading">${esc(
-						__('On this day', 'daymark')
-					)}</h2>
-					<div class="daymark-recent__list" data-explore-memories>
-						${skeletonRows(2)}
-						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
-					</div>
-				</section>
-				<section class="daymark-recent" aria-labelledby="daymark-explore-following-heading">
-					<div class="daymark-follow__heading">
-						<h2 id="daymark-explore-following-heading" class="daymark-section-heading">${esc(
-							__('Following', 'daymark')
-						)}</h2>
-						${
-							config.canManageSubscriptions
-								? `<button type="button" class="daymark-btn daymark-btn--secondary daymark-follow__open" data-follow-site>${esc(
-										__('+ Follow a site', 'daymark')
-								  )}</button>`
-								: ''
-						}
-					</div>
-					${
-						config.canManageSubscriptions
-							? `<p class="daymark-field__help">${esc(
-									__('Star a site to check it every hour and get a notification when it posts.', 'daymark')
-							  )}</p>`
-							: ''
-					}
-					<div class="daymark-recent__list" data-explore-following>
-						${skeletonRows(2)}
-						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
-					</div>
-				</section>
-			</section>
-			${navFooterMarkup('explore')}`;
-		},
-
-		bindEvents() {
-			root.querySelectorAll('[data-explore-type]').forEach((btn) => {
-				btn.addEventListener('click', () => {
-					searchPreset = { type: btn.getAttribute('data-explore-type') };
-					navigate('#search');
-				});
-			});
-
-			const bookmarksBtn = root.querySelector('[data-explore-bookmarks]');
-			if (bookmarksBtn) {
-				bookmarksBtn.addEventListener('click', () => {
-					searchPreset = { bookmarked: true };
-					navigate('#search');
-				});
-			}
-
-			const following = root.querySelector('[data-explore-following]');
-			if (following) {
-				following.addEventListener('click', (event) => {
-					const star = event.target.closest('[data-favorite-toggle]');
-					if (star) {
-						toggleFavoriteSite(star);
-						return;
-					}
-					const trigger = event.target.closest('[data-explore-subscription]');
-					if (!trigger) {
-						return;
-					}
-					searchPreset = { source: trigger.getAttribute('data-explore-subscription') };
-					navigate('#search');
-				});
-			}
-
-			// "On this day" renders real feed cards (renderFeedItem), so it
-			// gets the exact same delegated click/keydown handlers Search
-			// binds on its own results list — card taps open the post view,
-			// and the stat-row toggles work identically here.
-			const memories = root.querySelector('[data-explore-memories]');
-			if (memories) {
-				memories.addEventListener('click', (event) => onFeedListClick(this, event));
-			}
-
-			// Like Search's results list, the memories list renders cards
-			// whose ⋯/routing/overflow menus need the shared dismissal
-			// entry, not just the bottom-nav one.
-			bindDismissible(this, [itemMenusDismissEntry(), navFooterDismissEntry(this)]);
-			bindNavFooter(this);
-		},
-
-		async init() {
-			// "On this day" renders real feed cards, so it needs the same
-			// per-item Maps Search keeps — card taps hand openPostView() the
-			// item via these (onFeedListClick()'s data-expand-post branch).
-			this._bySubId = new Map();
-			this._byMarkId = new Map();
-			// The "On this day" cards currently shown — what
-			// saveFeedSnapshot() captures when one is opened.
-			this._items = [];
-
-			const memories = root.querySelector('[data-explore-memories]');
-			const snapshot = takeFeedSnapshot('#explore');
-			if (memories && snapshot) {
-				// Coming back from a memory opened here: show the same
-				// cards and put the opened one back in place instead of
-				// fetching again and landing at the top (see feedSnapshot).
-				// Following loads below it, so it can't shift the card.
-				this._items = snapshot.items.slice();
-				this._items.forEach((item) => rememberItem(this, item));
-				memories.innerHTML = this._items.map((item) => renderFeedItem(item)).join('');
-				// showScreen() focuses the header right after init()
-				// starts, which scrolls to the top. Position the card after.
-				requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
-			} else if (memories) {
-				// Deliberately kicked off and left running, not awaited:
-				// memories and Following load independently, and one failing
-				// never blocks the other.
-				this.loadMemories(memories);
-			}
-
-			const list = root.querySelector('[data-explore-following]');
-			if (!list) {
-				return;
-			}
-			const subscriptions = await fetchSubscriptions();
-			if (!list.isConnected) {
-				return;
-			}
-			if (!subscriptions.length) {
-				list.innerHTML = config.canManageSubscriptions
-					? `<p class="daymark-empty">${esc(
-							__("You're not following any sites yet. Tap Follow a site to see a site's posts here.", 'daymark')
-					  )}</p>`
-					: `<p class="daymark-empty">${esc(__("You're not following any sites yet.", 'daymark'))}</p>`;
-				return;
-			}
-			const subscriptionLabel = (sub) =>
-				sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url;
-			// Favorites first, then A to Z.
-			list.innerHTML = subscriptions
-				.slice()
-				.sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || subscriptionLabel(a).localeCompare(subscriptionLabel(b)))
-				.map((sub) => {
-					const label = subscriptionLabel(sub);
-					const icon = sub.site_icon_url
-						? `<img class="daymark-recent__thumb" src="${esc(sub.site_icon_url)}" alt="" />`
-						: `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
-								label.charAt(0).toUpperCase()
-						  )}</span>`;
-					const open = `<button type="button" class="daymark-recent__item daymark-recent__item--button" data-explore-subscription="${esc(
-						String(sub.id)
-					)}">${icon}<span class="daymark-recent__body"><span class="daymark-recent__title">${esc(
-						label
-					)}</span></span></button>`;
-					if (!config.canManageSubscriptions) {
-						return open;
-					}
-					return `<div class="daymark-follow__row">${open}${favoriteToggleMarkup(sub.id, label, !!sub.favorite)}</div>`;
-				})
-				.join('');
-		},
-
-		// Fills the "On this day" list: GET /timeline?on_this_day=1 (Marks
-		// published on today's calendar date in a prior year, per issue
-		// #294), rendered through the same shared feed-item pipeline Search
-		// uses — renderFeedItem() for the cards, rememberItem() so taps can
-		// hand openPostView() the item, no group headers (the section has
-		// its own heading; a single "this day" bucket would add nothing).
-		// An empty result removes the whole section; a fetch failure shows an
-		// inline error, same shape as the Following list's own loading
-		// states.
-		async loadMemories(list) {
-			let items;
-			try {
-				items = await apiGet('timeline?on_this_day=1&per_page=50');
-			} catch (err) {
-				if (list.isConnected) {
-					list.innerHTML =
-						'<p class="daymark-error" role="alert">' +
-						esc(__("Couldn't load your memories. Try again in a moment.", 'daymark')) +
-						'</p>';
-				}
-				return;
-			}
-			if (!list.isConnected) {
-				return;
-			}
-			const arr = Array.isArray(items) ? items : [];
-			this._bySubId.clear();
-			this._byMarkId.clear();
-			this._items = arr.slice();
-			arr.forEach((item) => rememberItem(this, item));
-			if (!arr.length) {
-				list.closest('section').remove();
-				return;
-			}
-			list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
 		},
 	};
 
@@ -11522,7 +12259,6 @@
 			<header class="daymark-topbar">
 				${daymarkIconLink()}
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Me', 'daymark'))}</h1>
-				${notificationsIconButton()}
 			</header>
 			<section class="daymark-screen">
 				<div class="daymark-meprofile">
@@ -11632,7 +12368,7 @@
 			if (myMarks) {
 				myMarks.addEventListener('click', () => {
 					searchPreset = { source: 'mine' };
-					navigate('#search');
+					navigate('#explore');
 				});
 			}
 
@@ -11649,6 +12385,9 @@
 				logout.addEventListener('click', (event) => {
 					event.preventDefault();
 					const href = logout.href;
+					// Recent searches are kept on the device, so they leave
+					// with the person who made them.
+					clearRecentSearches();
 					Promise.all([clearOfflineShellCache(), unsubscribePushOnLogout()]).then(() => {
 						window.location.href = href;
 					});
@@ -15765,9 +16504,10 @@
 	// first page and land at the top. Holds the screen's hash, every item
 	// it had rendered (on Home, all infinite-scroll pages, in order), that
 	// screen's own state (Home's paging, Search's filters), and where the
-	// tapped card sat on screen. HomeScreen.init(), SearchScreen.init(),
-	// ExploreScreen.init() (its "On this day" cards), and MeScreen.init()
-	// (the day open under its calendar) consume it when `hash` matches. Kept in memory only: a reload or a
+	// tapped card sat on screen. HomeScreen.init(), ExploreScreen.init()
+	// (its results, or at rest its "On this day" cards), and
+	// MeScreen.init() (the day open under its calendar) consume it when
+	// `hash` matches. Kept in memory only: a reload or a
 	// cold start begins at the top as before. showScreen() discards it
 	// once the reader goes anywhere other than #post/#reblog or back.
 	let feedSnapshot = null;
@@ -15778,20 +16518,20 @@
 		if (screen === HomeScreen) {
 			hash = '#home';
 			extra = { recentPage: screen.recentPage, recentDone: screen.recentDone };
-		} else if (screen === ExploreScreen) {
-			hash = '#explore';
 		} else if (screen === MeScreen) {
 			// The day open under the calendar, and its month.
 			hash = '#me';
 			extra = { calMonth: screen.calMonth, calDay: screen.calDay };
-		} else if (screen === SearchScreen) {
-			hash = '#search';
+		} else if (screen === ExploreScreen) {
+			hash = '#explore';
 			extra = {
 				query: screen.searchQuery,
 				type: screen.searchType,
 				source: screen.searchSource,
 				bookmarked: screen.searchBookmarked,
 				date: screen.searchDate,
+				tag: screen.searchTag,
+				place: screen.searchPlace,
 				searchParams: screen._searchParams,
 				searchPage: screen._searchPage,
 				searchDone: screen._searchDone,
@@ -15882,7 +16622,7 @@
 		let pager = null;
 		if (screen === HomeScreen) {
 			pager = { params: '', page: screen.recentPage, perPage: RECENT_PER_PAGE, done: !!screen.recentDone };
-		} else if (screen === SearchScreen) {
+		} else if (screen === ExploreScreen) {
 			pager = {
 				params: screen._searchParams || '',
 				page: screen._searchPage || 1,
@@ -15929,7 +16669,7 @@
 					if (list.source === HomeScreen) {
 						feedSnapshot.recentPage = pager.page;
 						feedSnapshot.recentDone = pager.done;
-					} else if (list.source === SearchScreen) {
+					} else if (list.source === ExploreScreen) {
 						feedSnapshot.searchPage = pager.page;
 						feedSnapshot.searchDone = pager.done;
 					}
@@ -16925,7 +17665,7 @@
 			}
 		};
 		mark(item);
-		[HomeScreen, SearchScreen, ExploreScreen, MeScreen, PostScreen].forEach((screen) => {
+		[HomeScreen, ExploreScreen, MeScreen, PostScreen].forEach((screen) => {
 			if (screen._bySubId instanceof Map) {
 				screen._bySubId.forEach(mark);
 			}
@@ -17005,7 +17745,7 @@
 		if (screen && screen.view) {
 			pendingPostView = screen.view;
 		}
-		if (trigger && (screen === HomeScreen || screen === SearchScreen || screen === ExploreScreen)) {
+		if (trigger && (screen === HomeScreen || screen === ExploreScreen)) {
 			const card = trigger.closest('[data-subpost], [data-expand-post]');
 			if (card) {
 				saveFeedSnapshot(screen, card);
@@ -19907,7 +20647,6 @@
 
 	const NotificationsScreen = {
 		render() {
-			const backLink = backLinkWithIcon('#home', __('Back to Timeline', 'daymark'));
 			const tabs = NOTIFICATION_TABS.map(
 				(tab) => `<button type="button" role="tab" class="daymark-notif-tabs__tab" id="daymark-notif-tab-${esc(
 					tab.key
@@ -19919,7 +20658,7 @@
 			).join('');
 			return `
 			<header class="daymark-topbar">
-				${backLink}
+				${daymarkIconLink()}
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(
 					__('Notifications', 'daymark')
 				)}</h1>
@@ -19953,10 +20692,17 @@
 						__('Undo', 'daymark')
 					)}</button>
 				</div>
-			</section>`;
+			</section>
+			${navFooterMarkup('notifications')}`;
 		},
 
-		bindEvents() {},
+		// Notifications is one of the four tabs, so it carries the same
+		// footer as the others. init() adds the open reply box to what an
+		// outside click or Escape closes, once the list has loaded.
+		bindEvents() {
+			bindDismissible(this, [navFooterDismissEntry(this)]);
+			bindNavFooter(this);
+		},
 
 		// The full, unfiltered fetch — tabs and the source filter work on it
 		// in memory, never re-fetching, since the endpoint returns its whole
@@ -19974,9 +20720,10 @@
 			try {
 				const items = await apiGet('notifications');
 				// The endpoint marks everything seen server-side; mirror
-				// that so the Home bell dot clears without a reload.
-				if (config.notifications) {
+				// that so the tab's dot clears without a reload.
+				if (config.notifications && config.notifications.hasUnread) {
 					config.notifications.hasUnread = false;
+					updateUnreadDots();
 				}
 				if (!list || !list.isConnected) {
 					return;
@@ -20009,6 +20756,7 @@
 						isOpen: () => !!list.querySelector('[data-reply-toggle][aria-expanded="true"]'),
 						focus: () => list.querySelector('[data-reply-toggle][aria-expanded="true"]'),
 					},
+					navFooterDismissEntry(this),
 				]);
 			} catch (err) {
 				if (list && list.isConnected) {
@@ -21039,7 +21787,6 @@
 		'#reblog': ReblogScreen,
 		'#notifications': NotificationsScreen,
 		'#explore': ExploreScreen,
-		'#search': SearchScreen,
 		'#me': MeScreen,
 	};
 
