@@ -25,6 +25,7 @@ can't act on them.
 - Tap a photo while you write a Mark to give it a shape (Original, Square, Tall or Wide, cut from the middle) or turn it with Rotate, so a sideways or badly framed photo no longer means a trip to the Photos app first. Your site makes the edit and keeps the original, and Original puts it back. ([#612](https://github.com/jeffpaul/daymark/pull/612))
 - Publish later: under Tags, a new "When" line lets you pick a date and time for a Mark to go out. Publish then reads "Schedule", your site publishes the Mark at that time and sends it to the same places, and the Me screen lists scheduled Marks so you can change the time, publish now, or cancel. ([#613](https://github.com/jeffpaul/daymark/pull/613))
 - If you keep your reading list on a Microsub server such as Aperture, Settings -> Daymark -> Import/Export can now bring those sites into Daymark. You sign in once with your web address, pick sites from a checklist grouped by your channels, and each one becomes an ordinary followed site. Daymark reads the list once and keeps no sign-in. ([#611](https://github.com/jeffpaul/daymark/pull/611))
+- The Me screen now opens with your drafts and "Your days", a month calendar of the days you published on. Tap a day to see that day's Marks. Your name now shows your site and how many Marks you have published, and the links sit below under "App and account". Builds on the Me screen yusuf-saif proposed in [#432](https://github.com/jeffpaul/daymark/pull/432). ([#616](https://github.com/jeffpaul/daymark/pull/616))
 
 ### Changed
 
