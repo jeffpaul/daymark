@@ -48,12 +48,14 @@ behind — Marks are published, portable WordPress posts, not encrypted diary
 entries. What's worth borrowing is the *sense of accumulating personal
 history over time*, not the privacy model. Today this shows up as
 Timeline's cross-source search (Subscriptions & Timeline Following,
-CLAUDE.md's architectural-decisions table); calendar navigation, richer
-rediscovery ("on this day"), and automatic metadata surfacing (EXIF,
-location, capture time) are not yet built — treat them as this principle's
-open roadmap direction, not a shipped feature, and judge any proposal in
-that space by whether it deepens *rediscovery of your own history* rather
-than adding a new content-management surface.
+CLAUDE.md's architectural-decisions table), Explore's "On this day", and
+calendar navigation on the Me screen ("Your days", a month of the days you
+published on — a count per month, never a streak, and nothing marks a day
+without a Mark as missed). Richer rediscovery and more automatic metadata
+surfacing (EXIF, location, capture time) are this principle's open roadmap
+direction — judge any proposal in that space by whether it deepens
+*rediscovery of your own history* rather than adding a new
+content-management surface.
 
 ## WordPress — the ownership model
 

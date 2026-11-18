@@ -263,6 +263,8 @@ do_action('daymark_import_responses', $post_id, $network_id);  // backflow trigg
 | POST/PUT | `/daymark/v1/uploads/{id}` | Yes — edit_posts + upload_files + nonce, owner only (appends one part) |
 | DELETE | `/daymark/v1/uploads/{id}` | Yes — edit_posts + upload_files + nonce, owner only |
 | GET | `/daymark/v1/marks` | Yes — edit_posts + nonce |
+| GET | `/daymark/v1/calendar` | Yes — edit_posts + nonce (one month of the Me screen's calendar: the days this site published on, with a count and a small picture each; `month=YYYY-MM`, current month when omitted; a local read, no rate limit — see the "Your days" calendar decision) |
+| GET | `/daymark/v1/calendar/{YYYY-MM-DD}` | Yes — edit_posts + nonce (that day's posts on the site's own clock, newest first, in GET /timeline's Mark shape) |
 | POST | `/daymark/v1/ai/suggestions` | Yes — edit_posts + nonce |
 | POST | `/daymark/v1/ai/title` | Yes — edit_posts + nonce |
 | POST | `/daymark/v1/ai/alt-text` | Yes — upload_files + nonce |

@@ -355,10 +355,11 @@ decision rows for the full technical record.
   accounts/content all still need their own supporting data before they can
   be real sections.
 - [ ] Me beyond its current links ([#295](https://github.com/jeffpaul/daymark/issues/295))
-  — published-content browsing beyond "all your Marks", drafts management
-  (edit/delete) inline on Me instead of pointing back to Home, and any of
-  "connected services"/notifications summarized in place rather than linked
-  out.
+  — two of its three directions are done: drafts are managed on Me itself
+  (Edit, Publish, Delete), and browsing your own Marks is "Your days", a
+  month calendar of the days you published on, with Drafts above it and the
+  links grouped under "App and account". Still open: "connected
+  services"/notifications summarized in place rather than linked out.
 
 ---
 
