@@ -282,6 +282,54 @@ XML;
 		$this->assertContains( $subscription_id, $ids );
 	}
 
+	/**
+	 * GET /subscriptions says when each site last posted: its newest kept
+	 * post, never one dated in the future, and '' for a site with none.
+	 */
+	public function test_list_says_when_each_site_last_posted() {
+		wp_set_current_user( $this->author_a );
+
+		$subscriptions = new Daymark_Subscriptions();
+		$busy          = $subscriptions->create(
+			array(
+				'site_url' => 'https://busy.example/',
+				'feed_url' => 'https://busy.example/feed/',
+			)
+		);
+		$quiet         = $subscriptions->create(
+			array(
+				'site_url' => 'https://quiet.example/',
+				'feed_url' => 'https://quiet.example/feed/',
+			)
+		);
+
+		$dates = array(
+			'2026-02-03 04:05:06',
+			'2026-05-06 07:08:09',
+			gmdate( 'Y-m-d H:i:s', time() + YEAR_IN_SECONDS ),
+		);
+
+		foreach ( $dates as $date ) {
+			$post_id = (int) self::factory()->post->create(
+				array(
+					'post_type'   => Daymark_Subscription_Post_Type::POST_TYPE,
+					'post_status' => 'publish',
+				)
+			);
+			update_post_meta( $post_id, 'subscription_id', $busy );
+			update_post_meta( $post_id, 'published_at', $date );
+		}
+
+		$this->assertSame( array( $busy => '2026-05-06 07:08:09' ), Daymark_Subscription_Post_Type::latest_post_times() );
+
+		$response = rest_do_request( $this->request( 'GET', '/daymark/v1/subscriptions' ) );
+		$this->assertSame( 200, $response->get_status() );
+
+		$last = array_column( $response->get_data(), 'last_post_at', 'id' );
+		$this->assertSame( '2026-05-06T07:08:09+00:00', $last[ $busy ] );
+		$this->assertSame( '', $last[ $quiet ] );
+	}
+
 	/** Unsubscribing deletes the row and trashes its cached subscription posts. */
 	public function test_unsubscribe_deletes_row_and_trashes_subscription_posts() {
 		wp_set_current_user( $this->admin_user );

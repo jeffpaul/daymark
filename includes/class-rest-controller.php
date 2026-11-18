@@ -4722,15 +4722,27 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	/**
 	 * GET /daymark/v1/subscriptions — active subscriptions.
 	 *
+	 * Each also carries `last_post_at`: when that site last posted (UTC,
+	 * ISO 8601), or '' when no post of its is kept. Explore's People row
+	 * orders by it.
+	 *
 	 * @param WP_REST_Request $request The request (no query args yet).
 	 * @return WP_REST_Response
 	 */
 	public function get_subscriptions( WP_REST_Request $request ) {
 		unset( $request );
 
-		$rows = Daymark_Plugin::instance()->subscriptions->get_active();
+		$rows   = Daymark_Plugin::instance()->subscriptions->get_active();
+		$latest = Daymark_Subscription_Post_Type::latest_post_times();
+		$items  = array();
 
-		return rest_ensure_response( array_map( array( $this, 'prepare_subscription' ), $rows ) );
+		foreach ( $rows as $row ) {
+			$item                 = $this->prepare_subscription( $row );
+			$item['last_post_at'] = self::iso_date_gmt( $latest[ $item['id'] ] ?? '' );
+			$items[]              = $item;
+		}
+
+		return rest_ensure_response( $items );
 	}
 
 	/**

@@ -3618,12 +3618,14 @@ test('search: on the Explore tab, a query + type filter narrow the results', asy
 });
 
 // Explore and Search are one tab (issue #269): search on top with the
-// Bookmarks button beside it, and under its starting screen what Explore
-// always had (On this day, the sites you follow). Bookmarks and a followed
-// site search in place instead of leaving for another screen. The followed sites are canned here, so the test
-// needs no real feed, and "On this day" is handed a Mark from today, since
-// a test site has none from earlier years.
-test('explore: search on top with Bookmarks beside it, On this day and Following below', async ({ page }) => {
+// Bookmarks button beside it, and under its starting screen On this day.
+// Bookmarks and a followed site search in place instead of leaving for
+// another screen. The sites you follow are the People row, whoever posted
+// last first; the full list of them is a page under Me, not a second list
+// down here. The followed sites are canned, so the test needs no real
+// feed, and "On this day" is handed a Mark from today, since a test site
+// has none from earlier years.
+test('explore: search on top with Bookmarks beside it, People by latest post, On this day below', async ({ page }) => {
 	const memory = `E2E memory ${RUN_ID}`;
 
 	await loginAs(page);
@@ -3646,8 +3648,30 @@ test('explore: search on top with Bookmarks beside it, On this day and Following
 			status: 200,
 			contentType: 'application/json',
 			body: JSON.stringify([
-				{ id: 990001, site_title: 'Zed Example', site_url: 'https://zed.example/', site_icon_url: '', favorite: false },
-				{ id: 990002, site_title: 'Amy Example', site_url: 'https://amy.example/', site_icon_url: '', favorite: false },
+				{
+					id: 990002,
+					site_title: 'Amy Example',
+					site_url: 'https://amy.example/',
+					site_icon_url: '',
+					favorite: true,
+					last_post_at: '2026-01-05T09:00:00+00:00',
+				},
+				{
+					id: 990003,
+					site_title: 'Quiet Example',
+					site_url: 'https://quiet.example/',
+					site_icon_url: '',
+					favorite: false,
+					last_post_at: '',
+				},
+				{
+					id: 990001,
+					site_title: 'Zed Example',
+					site_url: 'https://zed.example/',
+					site_icon_url: '',
+					favorite: false,
+					last_post_at: '2026-03-01T18:30:00+00:00',
+				},
 			]),
 		});
 	});
@@ -3691,7 +3715,6 @@ test('explore: search on top with Bookmarks beside it, On this day and Following
 	expect(bookmarksBox.height).toBeGreaterThanOrEqual(44);
 	const memories = sections.locator('[data-explore-memories]');
 	await expect(memories.getByText(memory).first()).toBeVisible();
-	await expect(sections.locator('[data-follow-site]')).toBeVisible();
 	const order = await page.evaluate(() => {
 		const top = (selector) => document.querySelector(selector).getBoundingClientRect().top;
 		return [top('[data-search-input]'), top('[data-search-start]'), top('[data-explore-sections]')];
@@ -3699,14 +3722,23 @@ test('explore: search on top with Bookmarks beside it, On this day and Following
 	expect(order[0]).toBeLessThan(order[1]);
 	expect(order[1]).toBeLessThan(order[2]);
 
-	// Following lists every followed site, A to Z.
-	const followed = sections.locator('[data-explore-subscription]');
-	await expect(followed).toHaveCount(2);
-	await expect(followed.first()).toContainText('Amy Example');
+	// People: you, then whoever posted last (not favorites first, not A
+	// to Z), and a site with no post kept comes after the rest.
+	await expect(start.locator('.daymark-searchstart__name')).toHaveText([
+		'You',
+		'Zed Example',
+		'Amy Example',
+		'Quiet Example',
+	]);
+	// No second list of the same sites down the screen, and no Follow a
+	// site button: both are on Me's Following page.
+	await expect(page.locator('[data-explore-following]')).toHaveCount(0);
+	await expect(sections.locator('[data-follow-site]')).toHaveCount(0);
+	await expect(sections.getByRole('heading', { name: 'Following' })).toHaveCount(0);
 
 	// A followed site shows its posts right here: same tab, the Source
 	// filter set, and the sections out of the way of the results.
-	await followed.first().click();
+	await start.locator('[data-start-source="990002"]').click();
 	await expect(source).toHaveValue('990002');
 	await expect(page).toHaveURL(/\/daymark\/explore\/?(#explore)?$/);
 	await expect(sections).toBeHidden();
@@ -5905,7 +5937,7 @@ test('+New launcher works from Explore, Notifications, and Me, not just Timeline
 			/is-active/
 		);
 		await expect(page.locator('[data-action="new-mark"]')).not.toHaveClass(/is-active/);
-		// Explore's Following list and On this day, and Notifications'
+		// Explore's People row and On this day, and Notifications'
 		// list, each render a `.daymark-skeleton` placeholder
 		// synchronously, then replace it once their async fetch
 		// resolves — real content of a different size than the
@@ -6205,22 +6237,24 @@ test('Me shows the newest drafts above the calendar, with the rest behind Show m
 // and the sites you follow, between Your days and the links. Each row
 // leads to where that thing is handled. Notifications has no row here: its
 // tab sits in the bottom bar of this same screen. The Following row opens
-// Explore with the Following list at the top, since that list sits below
-// Explore's other sections.
-test('Me lists your connections: your site and the sites you follow, and Following opens the Following list', async ({
+// the Following page: still under the Me tab, every followed site with its
+// star, Follow a site, and a Back button to Me.
+test('Me lists your connections, and Following opens a page of the sites you follow with a way back', async ({
 	page,
 }) => {
 	await loginAs(page);
-	// Enough followed sites that Explore is taller than the screen and its
-	// Following list starts below the fold, with none of them failing (a
-	// failing one would send the row to Settings instead).
+	// Canned followed sites, so no real feed is needed. `failing` is what
+	// the Connections answer says about them, changed part way through.
 	const sites = Array.from({ length: 16 }, (unused, index) => ({
 		id: 990100 + index,
 		site_title: `Followed Example ${String(index + 1).padStart(2, '0')}`,
 		site_url: `https://followed-${index + 1}.example/`,
 		site_icon_url: '',
-		favorite: false,
+		favorite: 15 === index,
+		last_post_at: '',
 	}));
+	let failing = 0;
+	const failingUrl = '/wp-admin/options-general.php?page=daymark&e2e-failing=1';
 	await page.route(/\/daymark\/v1\/subscriptions(\?|$)/, async (route) => {
 		if ('GET' !== route.request().method()) {
 			await route.continue();
@@ -6231,7 +6265,7 @@ test('Me lists your connections: your site and the sites you follow, and Followi
 	await page.route(/\/daymark\/v1\/connections(\?|$)/, async (route) => {
 		const response = await route.fetch();
 		const body = await response.json();
-		body.following = { count: sites.length, failing: 0, url: '' };
+		body.following = { count: sites.length, failing, url: failing ? failingUrl : '' };
 		await route.fulfill({ response, body: JSON.stringify(body) });
 	});
 	await page.goto('/daymark/me');
@@ -6259,7 +6293,7 @@ test('Me lists your connections: your site and the sites you follow, and Followi
 
 	const following = list.locator('[data-conn="following"]');
 	await expect(following.locator('.daymark-meconn__detail')).toHaveText(`${sites.length} sites`);
-	await expect(following).toHaveAttribute('href', '#explore');
+	await expect(following).toHaveAttribute('href', '#following');
 
 	// Following is the card's last row: Notifications has none.
 	await expect(list.locator('[data-conn="notifications"]')).toHaveCount(0);
@@ -6272,37 +6306,58 @@ test('Me lists your connections: your site and the sites you follow, and Followi
 	expect(cardBox.y).toBeGreaterThan(daysBox.y);
 	expect(cardBox.y).toBeLessThan(linksBox.y);
 
-	// The Following row opens Explore at rest, scrolled so the Following
-	// list's heading sits just under the header, and focused for a screen
-	// reader.
+	// The Following row opens the Following page: its own title, the Me
+	// tab still the current one, and a Back button to Me.
 	await following.click();
-	await expect(page).toHaveURL(/#explore$/);
-	const heading = page.locator('#daymark-explore-following-heading');
-	await expect(page.locator('[data-explore-subscription]')).toHaveCount(sites.length);
-	await expect(page.locator('[data-search-start]')).toBeVisible();
-	await expect(heading).toBeFocused();
-	await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
-	await expect
-		.poll(() =>
-			page.evaluate(() =>
-				Math.round(document.getElementById('daymark-explore-following-heading').getBoundingClientRect().top)
-			)
-		)
-		.toBeLessThan(200);
-	await expect(heading).toBeInViewport();
+	await expect(page).toHaveURL(/#following$/);
+	await expect(page.getByRole('heading', { level: 1, name: 'Following' })).toBeFocused();
+	await expect(page.locator('a.daymark-bottomnav__link[href="#me"]')).toHaveClass(/is-active/);
+	const back = page.getByRole('link', { name: 'Back to Me' });
+	await expect(back).toBeVisible();
 
-	// Only that tap does it: opening Explore any other way starts at the
-	// top, on the search box.
+	// Every followed site, favorites first and then A to Z, each with its
+	// star, and Follow a site beside the count.
+	const rows = page.locator('[data-following-site]');
+	await expect(rows).toHaveCount(sites.length);
+	await expect(rows.first()).toContainText('Followed Example 16');
+	await expect(rows.nth(1)).toContainText('Followed Example 01');
+	await expect(page.locator('[data-following-count]')).toHaveText(`${sites.length} sites`);
+	await expect(page.locator('[data-following-list] [data-favorite-toggle]')).toHaveCount(sites.length);
+	await expect(page.locator('[data-following-list] [data-favorite-toggle][aria-pressed="true"]')).toHaveCount(1);
+	await expect(page.locator('.daymark-screen [data-follow-site]')).toBeVisible();
+	// Nothing is failing, so nothing says so.
+	await expect(page.locator('[data-following-alert]')).toBeHidden();
+
+	// Back lands on Me at the row it was opened from, not at the top.
+	await back.click();
+	await expect(page).toHaveURL(/#me$/);
+	const followingAgain = page.locator('[data-me-connlist] [data-conn="following"]');
+	await expect(followingAgain).toBeFocused();
+	await expect(followingAgain).toBeInViewport();
+
+	// While followed sites can't be reached, the row says so and still
+	// opens the page, which leads to them in Settings.
+	failing = 2;
+	await page.evaluate(() => {
+		window.location.hash = '#home';
+	});
+	await expect(page.locator('a.daymark-bottomnav__link[href="#home"]')).toHaveClass(/is-active/);
 	await page.evaluate(() => {
 		window.location.hash = '#me';
 	});
-	await expect(page.locator('[data-me-connlist] [data-conn="following"]')).toBeVisible();
-	await page.evaluate(() => {
-		window.location.hash = '#explore';
-	});
-	await expect(page.locator('[data-explore-subscription]')).toHaveCount(sites.length);
-	await expect(heading).not.toBeFocused();
+	await expect(followingAgain.locator('.daymark-meconn__status')).toHaveText('2 need a look');
+	await expect(followingAgain).toHaveAttribute('href', '#following');
+	// Opened from the top of Me this time: no jump down to the card.
 	expect(await page.evaluate(() => window.scrollY)).toBe(0);
+	await followingAgain.click();
+	const alert = page.locator('[data-following-alert] a');
+	await expect(alert).toContainText("2 sites can't be reached");
+	await expect(alert).toHaveAttribute('href', failingUrl);
+
+	// Tapping a site shows its posts in Explore, with the Source filter set.
+	await rows.nth(1).click();
+	await expect(page).toHaveURL(/#explore$/);
+	await expect(page.locator('[data-source-filter]')).toHaveValue(String(sites[0].id));
 });
 
 // The launcher: tapping "+ New Mark" fans out 4 labeled, accessible bubbles

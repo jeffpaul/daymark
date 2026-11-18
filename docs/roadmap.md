@@ -351,8 +351,10 @@ decision rows for the full technical record.
   [#269](https://github.com/jeffpaul/daymark/issues/269). ([#615](https://github.com/jeffpaul/daymark/pull/615))
 - [x] **Explore and Search as one tab, Notifications in the bar**: the
   bottom nav is now Timeline, Explore, +New, Notifications, Me. Explore has
-  search on top with a Bookmarks button beside it, then "On this day" and
-  Following; "Browse by type" went, since the type chips cover it. Notifications left the header
+  search on top with a Bookmarks button beside it, then the People row
+  (whoever posted last first) and "On this day"; "Browse by type" went,
+  since the type chips cover it, and the Following list moved to a page
+  under Me ([#618](https://github.com/jeffpaul/daymark/pull/618)). Notifications left the header
   bell for its own tab, which shows an unread mark. One icon for the merged
   tab: a magnifying glass with the compass needle inside. Old Search links
   still open it. ([#615](https://github.com/jeffpaul/daymark/pull/615))
@@ -376,7 +378,8 @@ decision rows for the full technical record.
   calendar of the days you published on, with Drafts above it; and a
   Connections card shows your site, where your Marks are shared and how
   many sites you follow (and whether any need a look), above the links
-  grouped under "App and account".
+  grouped under "App and account". Its Following row opens a page of
+  every followed site, with the favorite stars and Follow a site.
 
 ---
 

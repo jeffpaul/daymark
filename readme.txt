@@ -167,7 +167,7 @@ Turning off Check In location also stops the weather lookup, since weather needs
 
 = How do I follow a site? =
 
-In the Daymark app, tap "+ Follow a site" in Explore's Following section, or "Follow a site" on the Me screen. Paste the site's address, pick one of the feeds Daymark finds, and tap Follow. You can do the same in Settings -> Daymark -> Subscriptions. New posts from the site then appear in your Daymark Timeline. Settings -> Daymark -> General sets how often Daymark checks for new posts.
+In the Daymark app, open the Me screen and tap "Follow a site", or tap Following there and then "+ Follow a site". Paste the site's address, pick one of the feeds Daymark finds, and tap Follow. You can do the same in Settings -> Daymark -> Subscriptions. New posts from the site then appear in your Daymark Timeline. Settings -> Daymark -> General sets how often Daymark checks for new posts.
 
 To follow many sites at once, import an OPML file from your feed reader on the Import / Export tab. With Jetpack and a linked WordPress.com account, you can also import the sites you follow in the WordPress.com Reader. If you keep a reading list on a Microsub server (such as Aperture), sign in with your web address on the same tab and choose which of its sites to follow here; Daymark reads the list once and each site you pick becomes an ordinary followed site. Following sites needs an administrator, since the list is shared by everyone on the site.
 
