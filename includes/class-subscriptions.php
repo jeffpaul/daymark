@@ -1254,6 +1254,32 @@ class Daymark_Subscriptions {
 	}
 
 	/**
+	 * How many sites are followed, and how many of those are failing right
+	 * now (get_with_issues()'s own rule: at least one failed check since
+	 * the last good one). One query, for the Me screen's Connections card.
+	 *
+	 * @since 0.23.0
+	 *
+	 * @return array{total: int, failing: int}
+	 */
+	public function counts(): array {
+		global $wpdb;
+
+		$table = self::table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom table with no WP data API.
+		$row = $wpdb->get_row(
+			"SELECT COUNT(*) AS total, COALESCE( SUM( consecutive_failure_count > 0 ), 0 ) AS failing FROM {$table}", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table name only, not user input; no user-supplied values in this query.
+			ARRAY_A
+		);
+
+		return array(
+			'total'   => is_array( $row ) ? (int) $row['total'] : 0,
+			'failing' => is_array( $row ) ? (int) $row['failing'] : 0,
+		);
+	}
+
+	/**
 	 * Update status/failure-count/checked-at fields on an existing
 	 * subscription. Only recognized columns are written; unknown keys in
 	 * `$fields` are ignored rather than passed through to the query.

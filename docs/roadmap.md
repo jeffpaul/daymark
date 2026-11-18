@@ -354,12 +354,13 @@ decision rows for the full technical record.
   but highlights, collections, recently-popular, and suggested
   accounts/content all still need their own supporting data before they can
   be real sections.
-- [ ] Me beyond its current links ([#295](https://github.com/jeffpaul/daymark/issues/295))
-  — two of its three directions are done: drafts are managed on Me itself
-  (Edit, Publish, Delete), and browsing your own Marks is "Your days", a
-  month calendar of the days you published on, with Drafts above it and the
-  links grouped under "App and account". Still open: "connected
-  services"/notifications summarized in place rather than linked out.
+- [x] Me beyond its current links ([#295](https://github.com/jeffpaul/daymark/issues/295))
+  — all three directions are done: drafts are managed on Me itself (Edit,
+  Publish, Delete); browsing your own Marks is "Your days", a month
+  calendar of the days you published on, with Drafts above it; and a
+  Connections card shows your site, where your Marks are shared, how many
+  sites you follow (and whether any need a look) and how many
+  notifications are new, above the links grouped under "App and account".
 
 ---
 
@@ -838,11 +839,11 @@ that loop without new destinations or a new social network.
 - **Explore, Search, and Me's remaining scope** — see "Shipped — Bottom
   navigation rework" above. Search's date filter and Explore's
   memories section shipped together ([#413](https://github.com/jeffpaul/daymark/pull/413));
-  the still-open halves of Explore and Me
-  ([#294](https://github.com/jeffpaul/daymark/issues/294),
-  [#295](https://github.com/jeffpaul/daymark/issues/295)) each still need new
-  supporting REST/data work before they can grow past their current
-  foundation.
+  Me's three directions have since shipped too
+  ([#295](https://github.com/jeffpaul/daymark/issues/295)); the still-open
+  half of Explore ([#294](https://github.com/jeffpaul/daymark/issues/294))
+  still needs new supporting REST/data work before it can grow past its
+  current foundation.
 - **Smaller ideas, tracked but unscheduled**: AI-written summaries for
   followed posts ([#224](https://github.com/jeffpaul/daymark/issues/224)), hiding Mark types from the +New launcher
   ([#398](https://github.com/jeffpaul/daymark/issues/398)), and seeing your followers with a follow-back option

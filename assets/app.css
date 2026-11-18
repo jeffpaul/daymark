@@ -2505,8 +2505,10 @@ button.daymark-stat {
 	align-self: flex-start;
 }
 
-/* Me: "Your days" (the calendar) and "App and account" (the links). */
+/* Me: "Your days" (the calendar), "Connections" (the card) and "App and
+   account" (the links). */
 .daymark-medays,
+.daymark-meconn,
 .daymark-meapp,
 .daymark-medays__day {
 	display: flex;
@@ -2768,6 +2770,102 @@ button.daymark-cal__day {
 
 .daymark-melink:hover .daymark-melink__external,
 .daymark-melink:focus-visible .daymark-melink__external {
+	color: currentColor;
+}
+
+/* Me: the Connections card. One row each for your site, every place a
+   Mark is also shared, the sites you follow, and Notifications. */
+.daymark-meconn__list {
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	overflow: hidden;
+}
+
+/* While the rows load, the placeholders sit inside the card's outline. */
+.daymark-meconn__list[aria-busy='true'] {
+	gap: var(--daymark-spacing-sm);
+	border-color: transparent;
+}
+
+.daymark-meconn__row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-height: 60px;
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	border-bottom: 1px solid var(--daymark-border);
+	background: var(--daymark-bg);
+	color: var(--daymark-text-primary);
+	text-decoration: none;
+}
+
+.daymark-meconn__row:last-child {
+	border-bottom: none;
+}
+
+a.daymark-meconn__row:hover,
+a.daymark-meconn__row:focus-visible {
+	background: var(--daymark-accent-wash);
+}
+
+.daymark-meconn__icon {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 36px;
+	border-radius: 50%;
+	background: var(--daymark-bg-subtle);
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-meconn__siteicon {
+	width: 20px;
+	height: 20px;
+	border-radius: 4px;
+}
+
+.daymark-meconn__text {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.daymark-meconn__name {
+	font-size: 15px;
+	line-height: 1.3;
+}
+
+.daymark-meconn__detail {
+	overflow: hidden;
+	color: var(--daymark-text-secondary);
+	font-size: 13px;
+	line-height: 1.4;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.daymark-meconn__status {
+	flex-shrink: 0;
+	color: var(--daymark-text-secondary);
+	font-size: 13px;
+}
+
+.daymark-meconn__status--alert {
+	color: var(--daymark-accent);
+	font-weight: 600;
+}
+
+.daymark-meconn__row .daymark-melink__external {
+	margin-inline-start: 0;
+}
+
+a.daymark-meconn__row:hover .daymark-melink__external,
+a.daymark-meconn__row:focus-visible .daymark-melink__external {
 	color: currentColor;
 }
 
