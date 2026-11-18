@@ -1650,7 +1650,7 @@
 	// Feather "volume-2": the full post view's Listen button (Read to me).
 	const LISTEN_GLYPH =
 		'<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
-	// Feather "star": a favorite followed site (Explore's Following list).
+	// Feather "star": a favorite followed site (Me's Following page).
 	const STAR_GLYPH =
 		'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>';
 	// Feather "user-plus": following a site from a follow link.
@@ -6628,7 +6628,7 @@
 		)}</option>${subscriptionOptions}`;
 	}
 
-	// The star beside a followed site in Explore: a favorite is checked
+	// The star beside a followed site on the Following page: a favorite is checked
 	// every hour, and its new posts send a push (Daymark_Push).
 	function favoriteToggleMarkup(id, label, on) {
 		const text = on
@@ -6680,9 +6680,9 @@
 			});
 	}
 
-	// Active subscriptions, for the Source filter and Explore's Following
-	// section — never throws; an empty list just means those UIs show
-	// nothing extra rather than failing.
+	// Active subscriptions, for the Source filter, Explore's People row and
+	// Me's Following page — never throws; an empty list just means those
+	// UIs show nothing extra rather than failing.
 	async function fetchSubscriptions() {
 		try {
 			const result = await apiGet('subscriptions');
@@ -10749,31 +10749,6 @@
 							<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 						</div>
 					</section>
-					<section class="daymark-recent" aria-labelledby="daymark-explore-following-heading">
-						<div class="daymark-follow__heading">
-							<h2 id="daymark-explore-following-heading" class="daymark-section-heading">${esc(
-								__('Following', 'daymark')
-							)}</h2>
-							${
-								config.canManageSubscriptions
-									? `<button type="button" class="daymark-btn daymark-btn--secondary daymark-follow__open" data-follow-site>${esc(
-											__('+ Follow a site', 'daymark')
-									  )}</button>`
-									: ''
-							}
-						</div>
-						${
-							config.canManageSubscriptions
-								? `<p class="daymark-field__help">${esc(
-										__('Star a site to check it every hour and get a notification when it posts.', 'daymark')
-								  )}</p>`
-								: ''
-						}
-						<div class="daymark-recent__list" data-explore-following>
-							${skeletonRows(2)}
-							<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
-						</div>
-					</section>
 				</div>
 				<div class="daymark-searchsuggest" data-search-suggest hidden></div>
 				<section class="daymark-recent" aria-labelledby="daymark-search-results-heading" data-search-results-section>
@@ -10896,23 +10871,6 @@
 				memories.addEventListener('click', (event) => onFeedListClick(this, event));
 			}
 
-			const following = root.querySelector('[data-explore-following]');
-			if (following) {
-				following.addEventListener('click', (event) => {
-					const star = event.target.closest('[data-favorite-toggle]');
-					if (star) {
-						toggleFavoriteSite(star);
-						return;
-					}
-					const trigger = event.target.closest('[data-explore-subscription]');
-					if (!trigger) {
-						return;
-					}
-					this.chooseSource(trigger.getAttribute('data-explore-subscription'));
-					this.focusResultsFromTop();
-				});
-			}
-
 			const more = root.querySelector('[data-search-more]');
 			if (more) {
 				more.addEventListener('click', (event) => {
@@ -10967,6 +10925,7 @@
 			// filters and results, and the card's place, instead of
 			// searching again from the top (see feedSnapshot).
 			const snapshot = takeFeedSnapshot('#explore');
+
 			if (snapshot) {
 				searchPreset = null;
 				this.searchQuery = snapshot.query || '';
@@ -10998,9 +10957,6 @@
 				input.value = this.searchQuery;
 			}
 
-			if (this._subscriptionsLoaded) {
-				this.renderFollowing();
-			}
 			this.loadSubscriptionsForFilter();
 			this.loadTopTags();
 			if (snapshot && !this.isIdle()) {
@@ -11081,58 +11037,6 @@
 				return;
 			}
 			this.showMemories(Array.isArray(items) ? items : []);
-		},
-
-		// The Following list: every followed site, favorites first, then A
-		// to Z, each with its star for someone who can manage follows.
-		// Tapping a site shows its posts.
-		renderFollowing() {
-			const list = root.querySelector('[data-explore-following]');
-			if (!list || !list.isConnected) {
-				return;
-			}
-			const subscriptions = this._subscriptions || [];
-			if (!subscriptions.length) {
-				list.innerHTML = config.canManageSubscriptions
-					? `<p class="daymark-empty">${esc(
-							__("You're not following any sites yet. Tap Follow a site to see a site's posts here.", 'daymark')
-					  )}</p>`
-					: `<p class="daymark-empty">${esc(__("You're not following any sites yet.", 'daymark'))}</p>`;
-				return;
-			}
-			const subscriptionLabel = (sub) =>
-				sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url;
-			list.innerHTML = subscriptions
-				.slice()
-				.sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || subscriptionLabel(a).localeCompare(subscriptionLabel(b)))
-				.map((sub) => {
-					const label = subscriptionLabel(sub);
-					const icon = sub.site_icon_url
-						? `<img class="daymark-recent__thumb" src="${esc(sub.site_icon_url)}" alt="" />`
-						: `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
-								label.charAt(0).toUpperCase()
-						  )}</span>`;
-					const open = `<button type="button" class="daymark-recent__item daymark-recent__item--button" data-explore-subscription="${esc(
-						String(sub.id)
-					)}">${icon}<span class="daymark-recent__body"><span class="daymark-recent__title">${esc(
-						label
-					)}</span></span></button>`;
-					if (!config.canManageSubscriptions) {
-						return open;
-					}
-					return `<div class="daymark-follow__row">${open}${favoriteToggleMarkup(sub.id, label, !!sub.favorite)}</div>`;
-				})
-				.join('');
-		},
-
-		// A choice made far down the starting screen (a followed site)
-		// puts its results at the top, so go there.
-		focusResultsFromTop() {
-			window.scrollTo(0, 0);
-			const heading = root.querySelector('[data-daymark-focus]');
-			if (heading) {
-				heading.focus({ preventScroll: true });
-			}
 		},
 
 		// Re-render the saved results rather than searching again, so the
@@ -11331,12 +11235,16 @@
 
 			const user = config.currentUser || {};
 			const label = (sub) => (sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url);
+			// You, then whoever posted last (GET /subscriptions' last_post_at,
+			// UTC in one format, so it sorts as text). A site with no post
+			// kept comes after the rest, and a tie goes A to Z.
+			const lastPost = (sub) => sub.last_post_at || '';
 			const people = [{ source: 'mine', label: __('You', 'daymark'), icon: user.avatarUrl || '' }].concat(
 				(this._subscriptions || [])
 					.slice()
 					.sort(
 						(a, b) =>
-							Number(!!b.favorite) - Number(!!a.favorite) ||
+							lastPost(b).localeCompare(lastPost(a)) ||
 							label(a).localeCompare(label(b), undefined, { sensitivity: 'base' })
 					)
 					.slice(0, SEARCH_START_PEOPLE)
@@ -11626,8 +11534,6 @@
 		// the dropdown just renders "All sites"/"My marks" until this resolves.
 		async loadSubscriptionsForFilter() {
 			this._subscriptions = await fetchSubscriptions();
-			this._subscriptionsLoaded = true;
-			this.renderFollowing();
 			const select = root.querySelector('[data-source-filter]');
 			if (select && select.isConnected) {
 				select.innerHTML = sourceOptionsMarkup(this._subscriptions);
@@ -12116,8 +12022,6 @@
 		'<circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>';
 	const CONNECTION_PEOPLE_GLYPH =
 		'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>';
-	const CONNECTION_BELL_GLYPH =
-		'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path>';
 
 	function connectionGlyph(glyph) {
 		return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${glyph}</svg>`;
@@ -12154,7 +12058,6 @@
 		const following = data.following || {};
 		const count = Number(following.count) || 0;
 		const failing = Number(following.failing) || 0;
-		const unread = Number(data.notifications && data.notifications.unread) || 0;
 
 		rows.push({
 			key: 'site',
@@ -12210,25 +12113,9 @@
 				  )
 				: '',
 			alert: true,
-			// The failing ones, in WordPress, while there are any (and you
-			// can open that screen); otherwise the Following list.
-			href: following.url || '#explore',
-			external: !!following.url,
-		});
-
-		rows.push({
-			key: 'notifications',
-			icon: connectionGlyph(CONNECTION_BELL_GLYPH),
-			name: __('Notifications', 'daymark'),
-			detail: __('Replies, likes and mentions', 'daymark'),
-			status: unread
-				? sprintf(
-						/* translators: %s: number of unread notifications */
-						_n('%s new', '%s new', unread, 'daymark'),
-						unread
-				  )
-				: '',
-			href: '#notifications',
+			// The Following page (FollowingScreen), which also leads to the
+			// failing ones in WordPress while there are any.
+			href: '#following',
 		});
 
 		return rows.map(connectionRow).join('');
@@ -12478,6 +12365,10 @@
 			this.calDay = '';
 			const showDrafts = meShowDrafts;
 			meShowDrafts = false;
+			// Back from the Following page: the row it was opened from, not
+			// the top of Me. showScreen() calls init() before it records
+			// this screen, so currentScreen is still the one being left.
+			const fromFollowing = '#following' === currentScreen;
 			// Every draft when you came for the drafts; else the newest few.
 			this._draftsAll = showDrafts;
 
@@ -12489,12 +12380,31 @@
 					this.showDay(snapshot.calDay, snapshot.items);
 				}
 			});
-			// Below everything a Back lands on, so it never holds that up.
-			this.loadConnections();
+			// Below everything a Back from a Mark lands on, so it never
+			// holds that up.
+			const connections = this.loadConnections();
 			await Promise.all([this.loadDrafts(showDrafts), calendar]);
 			if (snapshot && '#me' === currentScreen) {
 				requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
+			} else if (fromFollowing) {
+				// Once everything above the card has its full height.
+				await connections;
+				this.showFollowingRow();
 			}
+		},
+
+		// The Connections card's Following row in the middle of the screen,
+		// with focus on it, for someone coming back from the Following
+		// page. Left alone when they have already scrolled.
+		showFollowingRow() {
+			const row = root.querySelector('[data-conn="following"]');
+			if (!row || '#me' !== currentScreen || window.scrollY > 4) {
+				return;
+			}
+			requestAnimationFrame(() => {
+				row.scrollIntoView({ block: 'center' });
+				row.focus({ preventScroll: true });
+			});
 		},
 
 		// Reload the Drafts list when Me is on screen: a draft saved (or
@@ -21777,6 +21687,157 @@
 		},
 	};
 
+	// --- Following: the sites you follow, a page under Me ---
+	//
+	// Opened by the Following row of Me's Connections card, with a Back
+	// button to Me. Every followed site, favorites first, then A to Z,
+	// each with its star for someone who can manage follows, plus Follow a
+	// site. Tapping a site shows its posts in Explore. This list used to
+	// sit at the bottom of Explore, under a People row of the same sites.
+	const FollowingScreen = {
+		render() {
+			return `
+			<header class="daymark-topbar">
+				${backLinkWithIcon('#me', __('Back to Me', 'daymark'))}
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Following', 'daymark'))}</h1>
+			</header>
+			<section class="daymark-screen">
+				<div class="daymark-following__top">
+				<div class="daymark-follow__heading">
+					<p class="daymark-following__count" data-following-count aria-live="polite"></p>
+					${
+						config.canManageSubscriptions
+							? `<button type="button" class="daymark-btn daymark-btn--secondary daymark-follow__open" data-follow-site>${esc(
+									__('+ Follow a site', 'daymark')
+							  )}</button>`
+							: ''
+					}
+				</div>
+				<p class="daymark-following__alert" data-following-alert hidden></p>
+				${
+					config.canManageSubscriptions
+						? `<p class="daymark-field__help">${esc(
+								__('Star a site to check it every hour and get a notification when it posts.', 'daymark')
+						  )}</p>`
+						: ''
+				}
+				</div>
+				<div class="daymark-recent__list" data-following-list>
+					${skeletonRows(3)}
+					<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
+				</div>
+			</section>
+			${navFooterMarkup('me')}`;
+		},
+
+		bindEvents() {
+			const list = root.querySelector('[data-following-list]');
+			if (list) {
+				list.addEventListener('click', (event) => {
+					const star = event.target.closest('[data-favorite-toggle]');
+					if (star) {
+						toggleFavoriteSite(star);
+						return;
+					}
+					const site = event.target.closest('[data-following-site]');
+					if (site) {
+						applySourceFilter(site.getAttribute('data-following-site'));
+					}
+				});
+			}
+			bindDismissible(this, [navFooterDismissEntry(this)]);
+			bindNavFooter(this);
+		},
+
+		async init() {
+			const list = root.querySelector('[data-following-list]');
+			if (!list) {
+				return;
+			}
+			// The sites, and (from the Connections card's own answer) how
+			// many of them can't be reached and where to fix that. The
+			// second is an extra: without it the list still shows.
+			const [subscriptions, connections] = await Promise.all([
+				fetchSubscriptions(),
+				apiGet('connections').catch(() => null),
+			]);
+			if (!list.isConnected) {
+				return;
+			}
+			this.showSites(list, subscriptions);
+			this.showFailing((connections && connections.following) || {});
+		},
+
+		showSites(list, subscriptions) {
+			const count = root.querySelector('[data-following-count]');
+			if (count) {
+				count.textContent = subscriptions.length
+					? sprintf(
+							/* translators: %s: number of sites followed */
+							_n('%s site', '%s sites', subscriptions.length, 'daymark'),
+							subscriptions.length
+					  )
+					: '';
+			}
+			if (!subscriptions.length) {
+				list.innerHTML = `<p class="daymark-empty">${esc(
+					config.canManageSubscriptions
+						? __("You're not following any sites yet. Tap Follow a site to add the first one.", 'daymark')
+						: __("You're not following any sites yet.", 'daymark')
+				)}</p>`;
+				return;
+			}
+			const label = (sub) => (sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url);
+			list.innerHTML = subscriptions
+				.slice()
+				.sort(
+					(a, b) =>
+						Number(!!b.favorite) - Number(!!a.favorite) ||
+						label(a).localeCompare(label(b), undefined, { sensitivity: 'base' })
+				)
+				.map((sub) => {
+					const name = label(sub);
+					const icon = sub.site_icon_url
+						? `<img class="daymark-recent__thumb" src="${esc(sub.site_icon_url)}" alt="" />`
+						: `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
+								name.charAt(0).toUpperCase()
+						  )}</span>`;
+					const open = `<button type="button" class="daymark-recent__item daymark-recent__item--button" data-following-site="${esc(
+						String(sub.id)
+					)}">${icon}<span class="daymark-recent__body"><span class="daymark-recent__title">${esc(
+						name
+					)}</span></span></button>`;
+					if (!config.canManageSubscriptions) {
+						return open;
+					}
+					return `<div class="daymark-follow__row">${open}${favoriteToggleMarkup(sub.id, name, !!sub.favorite)}</div>`;
+				})
+				.join('');
+		},
+
+		// "2 sites need a look", while any followed site can't be reached:
+		// a link to them in WordPress for someone who can open that screen
+		// (`following.url`), and plain words for anyone else.
+		showFailing(following) {
+			const alert = root.querySelector('[data-following-alert]');
+			const failing = Number(following.failing) || 0;
+			if (!alert || !failing) {
+				return;
+			}
+			const text = sprintf(
+				/* translators: %s: number of followed sites that can't be reached */
+				_n("%s site can't be reached", "%s sites can't be reached", failing, 'daymark'),
+				failing
+			);
+			alert.innerHTML = following.url
+				? `<a class="daymark-following__alertlink" href="${esc(following.url)}"><span>${esc(
+						text
+				  )}</span>${leavesAppMarker()}</a>`
+				: esc(text);
+			alert.hidden = false;
+		},
+	};
+
 	// --- Init ---
 
 	SCREENS = {
@@ -21788,18 +21849,19 @@
 		'#notifications': NotificationsScreen,
 		'#explore': ExploreScreen,
 		'#me': MeScreen,
+		'#following': FollowingScreen,
 	};
 
 	window.addEventListener('hashchange', () => {
 		showScreen(window.location.hash);
 	});
 
-	// "Follow a site" from anywhere it's offered (Explore, Me, an empty
-	// Timeline, a follow link). After following, Explore and Home reload so
-	// the new site and its posts appear.
+	// "Follow a site" from anywhere it's offered (Me, its Following page, an
+	// empty Timeline, a follow link). After following, the Following page,
+	// Explore and Home reload so the new site and its posts appear.
 	function reloadAfterFollowing() {
 		const hash = window.location.hash || '#home';
-		if ('#explore' === hash || '#home' === hash) {
+		if ('#following' === hash || '#explore' === hash || '#home' === hash) {
 			showScreen(hash);
 		}
 	}

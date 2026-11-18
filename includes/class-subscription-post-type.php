@@ -501,4 +501,49 @@ class Daymark_Subscription_Post_Type {
 
 		return preg_match( '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $value ) ? $value : '';
 	}
+
+	/**
+	 * When each followed site last posted: the newest `published_at` among
+	 * the posts kept from it, keyed by subscription ID. One grouped query,
+	 * for Explore's People row, which puts whoever posted last first.
+	 *
+	 * A post dated in the future (some feeds carry one) is left out, so it
+	 * can't hold its site at the front until that date arrives. A site with
+	 * no post kept has no entry.
+	 *
+	 * @since 0.23.0
+	 *
+	 * @return array<int, string> Subscription ID => `Y-m-d H:i:s`, UTC.
+	 */
+	public static function latest_post_times(): array {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- One grouped read across every followed post; WP_Query has no GROUP BY.
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT sub.meta_value AS subscription_id, MAX( pub.meta_value ) AS latest
+				FROM {$wpdb->posts} p
+				INNER JOIN {$wpdb->postmeta} sub ON sub.post_id = p.ID AND sub.meta_key = 'subscription_id'
+				INNER JOIN {$wpdb->postmeta} pub ON pub.post_id = p.ID AND pub.meta_key = 'published_at'
+				WHERE p.post_type = %s AND p.post_status = 'publish' AND pub.meta_value <> '' AND pub.meta_value <= %s
+				GROUP BY sub.meta_value",
+				self::POST_TYPE,
+				gmdate( 'Y-m-d H:i:s' )
+			),
+			ARRAY_A
+		);
+
+		$times = array();
+
+		foreach ( is_array( $rows ) ? $rows : array() as $row ) {
+			$id     = absint( $row['subscription_id'] ?? 0 );
+			$latest = self::sanitize_datetime( (string) ( $row['latest'] ?? '' ) );
+
+			if ( $id && '' !== $latest ) {
+				$times[ $id ] = $latest;
+			}
+		}
+
+		return $times;
+	}
 }

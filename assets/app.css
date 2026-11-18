@@ -2823,7 +2823,7 @@ button.daymark-cal__day {
 }
 
 /* Me: the Connections card. One row each for your site, every place a
-   Mark is also shared, the sites you follow, and Notifications. */
+   Mark is also shared, and the sites you follow. */
 .daymark-meconn__list {
 	display: flex;
 	flex-direction: column;
@@ -2916,6 +2916,38 @@ a.daymark-meconn__row:focus-visible {
 a.daymark-meconn__row:hover .daymark-melink__external,
 a.daymark-meconn__row:focus-visible .daymark-melink__external {
 	color: currentColor;
+}
+
+/* Me: the Following page (FollowingScreen, app.js). How many sites, with
+   Follow a site beside it, then a line when some can't be reached. */
+.daymark-following__top {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-following__top .daymark-field__help {
+	margin: 0;
+}
+
+.daymark-following__count {
+	margin: 0;
+	color: var(--daymark-text-muted);
+	font-size: 14px;
+}
+
+.daymark-following__alert {
+	margin: 0;
+	color: var(--daymark-accent);
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.daymark-following__alertlink {
+	display: inline-flex;
+	align-items: center;
+	min-height: var(--daymark-tap-min);
+	color: inherit;
 }
 
 /* --- Create: media picker --- */

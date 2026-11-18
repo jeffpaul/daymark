@@ -1,7 +1,7 @@
 <?php
 /**
  * The Me screen's Connections card: your site, where Marks are shared,
- * the sites followed, and unread notifications.
+ * and the sites followed.
  *
  * @package Daymark
  */
@@ -209,16 +209,6 @@ class Test_Connections extends WP_UnitTestCase {
 		$this->assertSame( 'Through ActivityPub', $rows['activitypub']['detail'] );
 	}
 
-	/** Unread notifications are counted: a failing followed site is one. */
-	public function test_unread_notifications_are_counted() {
-		$this->assertSame( 0, Daymark_Connections::summary()['notifications']['unread'] );
-
-		$id = $this->follow( 'trouble.example.com', 3 );
-		Daymark_Plugin::instance()->subscriptions->update( $id, array( 'last_checked_at' => gmdate( 'Y-m-d H:i:s' ) ) );
-
-		$this->assertSame( 1, Daymark_Connections::summary()['notifications']['unread'] );
-	}
-
 	/** The REST route returns the same card. */
 	public function test_rest_route_returns_the_card() {
 		$this->follow( 'one.example.com' );
@@ -228,10 +218,11 @@ class Test_Connections extends WP_UnitTestCase {
 		$this->assertSame( 200, $response->get_status() );
 
 		$data = $response->get_data();
-		$this->assertSame( array( 'site', 'sharing', 'sharing_url', 'following', 'notifications' ), array_keys( $data ) );
+		// No notifications count: the Notifications tab in the bottom bar
+		// shows what is new, so the card has no row for it.
+		$this->assertSame( array( 'site', 'sharing', 'sharing_url', 'following' ), array_keys( $data ) );
 		$this->assertSame( 1, $data['following']['count'] );
 		$this->assertIsArray( $data['sharing'] );
-		$this->assertIsInt( $data['notifications']['unread'] );
 	}
 
 	/** The route needs the nonce and edit_posts, like the rest of the app. */
