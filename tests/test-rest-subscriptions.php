@@ -283,8 +283,9 @@ XML;
 	}
 
 	/**
-	 * GET /subscriptions says when each site last posted: its newest kept
-	 * post, never one dated in the future, and '' for a site with none.
+	 * GET /subscriptions says when each site last posted (its newest kept
+	 * post, never one dated in the future) and when a post of its last
+	 * arrived here, with '' for a site with none.
 	 */
 	public function test_list_says_when_each_site_last_posted() {
 		wp_set_current_user( $this->author_a );
@@ -312,15 +313,37 @@ XML;
 		foreach ( $dates as $date ) {
 			$post_id = (int) self::factory()->post->create(
 				array(
-					'post_type'   => Daymark_Subscription_Post_Type::POST_TYPE,
-					'post_status' => 'publish',
+					'post_type'     => Daymark_Subscription_Post_Type::POST_TYPE,
+					'post_status'   => 'publish',
+					'post_date'     => '2026-06-01 00:00:00',
+					'post_date_gmt' => '2026-06-01 00:00:00',
 				)
 			);
 			update_post_meta( $post_id, 'subscription_id', $busy );
 			update_post_meta( $post_id, 'published_at', $date );
 		}
 
-		$this->assertSame( array( $busy => '2026-05-06 07:08:09' ), Daymark_Subscription_Post_Type::latest_post_times() );
+		// A post with no date of its own still counts as one that arrived,
+		// and it arrived after the others.
+		$undated = (int) self::factory()->post->create(
+			array(
+				'post_type'     => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status'   => 'publish',
+				'post_date'     => '2026-07-08 09:10:11',
+				'post_date_gmt' => '2026-07-08 09:10:11',
+			)
+		);
+		update_post_meta( $undated, 'subscription_id', $busy );
+
+		$this->assertSame(
+			array(
+				$busy => array(
+					'posted'   => '2026-05-06 07:08:09',
+					'received' => '2026-07-08 09:10:11',
+				),
+			),
+			Daymark_Subscription_Post_Type::latest_times()
+		);
 
 		$response = rest_do_request( $this->request( 'GET', '/daymark/v1/subscriptions' ) );
 		$this->assertSame( 200, $response->get_status() );
@@ -328,6 +351,10 @@ XML;
 		$last = array_column( $response->get_data(), 'last_post_at', 'id' );
 		$this->assertSame( '2026-05-06T07:08:09+00:00', $last[ $busy ] );
 		$this->assertSame( '', $last[ $quiet ] );
+
+		$received = array_column( $response->get_data(), 'last_received_at', 'id' );
+		$this->assertSame( '2026-07-08T09:10:11+00:00', $received[ $busy ] );
+		$this->assertSame( '', $received[ $quiet ] );
 	}
 
 	/** Unsubscribing deletes the row and trashes its cached subscription posts. */

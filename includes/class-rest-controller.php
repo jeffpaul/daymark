@@ -1245,6 +1245,18 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/explore/seen',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'mark_explore_seen' ),
+				// Same posture as /timeline/last-seen: a local per-user
+				// meta write with no outbound request, once per visit.
+				'permission_callback' => array( $this, 'permissions_check' ),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/timeline/position',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -4122,6 +4134,29 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * POST /daymark/v1/explore/seen — record that the current user opened
+	 * Explore just now. The response has `previous`, the visit before this
+	 * one ('' the first time), and `seen`, this one, both UTC, ISO 8601.
+	 * Explore's People row rings whoever has a post that arrived after
+	 * `previous`.
+	 *
+	 * @param WP_REST_Request $request The request (no params).
+	 * @return WP_REST_Response
+	 */
+	public function mark_explore_seen( WP_REST_Request $request ) {
+		unset( $request );
+
+		$visit = Daymark_Explore_Seen::touch( get_current_user_id() );
+
+		return rest_ensure_response(
+			array(
+				'previous' => self::iso_date_gmt( $visit['previous'] ),
+				'seen'     => self::iso_date_gmt( $visit['seen'] ),
+			)
+		);
+	}
+
+	/**
 	 * POST /daymark/v1/interaction-hints/{hint}/seen — record that the
 	 * current user has seen an interaction-row explainer overlay, so it
 	 * stays dismissed on every device they use (issue #322). The response
@@ -4722,9 +4757,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	/**
 	 * GET /daymark/v1/subscriptions — active subscriptions.
 	 *
-	 * Each also carries `last_post_at`: when that site last posted (UTC,
-	 * ISO 8601), or '' when no post of its is kept. Explore's People row
-	 * orders by it.
+	 * Each also carries `last_post_at`, when that site last posted, and
+	 * `last_received_at`, when a post of its last arrived here (both UTC,
+	 * ISO 8601, or '' when no post of its is kept). Explore's People row
+	 * orders by the first and rings by the second (see
+	 * Daymark_Subscription_Post_Type::latest_times()).
 	 *
 	 * @param WP_REST_Request $request The request (no query args yet).
 	 * @return WP_REST_Response
@@ -4733,13 +4770,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		unset( $request );
 
 		$rows   = Daymark_Plugin::instance()->subscriptions->get_active();
-		$latest = Daymark_Subscription_Post_Type::latest_post_times();
+		$latest = Daymark_Subscription_Post_Type::latest_times();
 		$items  = array();
 
 		foreach ( $rows as $row ) {
-			$item                 = $this->prepare_subscription( $row );
-			$item['last_post_at'] = self::iso_date_gmt( $latest[ $item['id'] ] ?? '' );
-			$items[]              = $item;
+			$item                     = $this->prepare_subscription( $row );
+			$times                    = $latest[ $item['id'] ] ?? array();
+			$item['last_post_at']     = self::iso_date_gmt( $times['posted'] ?? '' );
+			$item['last_received_at'] = self::iso_date_gmt( $times['received'] ?? '' );
+			$items[]                  = $item;
 		}
 
 		return rest_ensure_response( $items );

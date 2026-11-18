@@ -6223,6 +6223,11 @@
 	// composer. ExploreScreen.init() consumes and clears it.
 	let searchPreset = null;
 
+	// '#explore' when the People row's "See all" was just tapped: the
+	// Following page then goes Back to Explore, not to Me. One-shot, like
+	// searchPreset.
+	let followingReturnTo = '';
+
 	// One-shot: set when Home's drafts row is tapped, so the Me screen
 	// scrolls its Drafts list into view instead of opening at the top.
 	let meShowDrafts = false;
@@ -10957,6 +10962,22 @@
 				input.value = this.searchQuery;
 			}
 
+			// The People row rings whoever has a post that arrived since
+			// the visit before this one. A visit lasts until another tab
+			// is opened: a post opened from here, the Following page, and
+			// the way back from either are all one visit, so its rings
+			// stay. showScreen() calls init() before it records this
+			// screen, so lastMainScreen is still the tab before this one.
+			// A visit that opens on results (a preset) shows no People
+			// row, so it isn't counted and the rings wait for the next.
+			if ('#explore' !== lastMainScreen) {
+				this._peopleSince = '';
+				this._peopleLooked = new Set();
+				if (this.isIdle()) {
+					this.markVisit();
+				}
+			}
+
 			this.loadSubscriptionsForFilter();
 			this.loadTopTags();
 			if (snapshot && !this.isIdle()) {
@@ -11239,6 +11260,12 @@
 			// UTC in one format, so it sorts as text). A site with no post
 			// kept comes after the rest, and a tie goes A to Z.
 			const lastPost = (sub) => sub.last_post_at || '';
+			// A ring for a site with a post received since the visit before
+			// this one (see init()), until it is tapped. Both times are the
+			// site's own clock, UTC in one format, so they compare as text.
+			const since = this._peopleSince || '';
+			const looked = this._peopleLooked || new Set();
+			const isNew = (sub) => !!since && (sub.last_received_at || '') > since && !looked.has(String(sub.id));
 			const people = [{ source: 'mine', label: __('You', 'daymark'), icon: user.avatarUrl || '' }].concat(
 				(this._subscriptions || [])
 					.slice()
@@ -11248,16 +11275,38 @@
 							label(a).localeCompare(label(b), undefined, { sensitivity: 'base' })
 					)
 					.slice(0, SEARCH_START_PEOPLE)
-					.map((sub) => ({ source: String(sub.id), label: label(sub), icon: sub.site_icon_url || '' }))
+					.map((sub) => ({
+						source: String(sub.id),
+						label: label(sub),
+						icon: sub.site_icon_url || '',
+						isNew: isNew(sub),
+					}))
 			);
+			// "See all" opens the Following page (every site, the stars,
+			// Follow a site), which then goes Back to here.
 			const peopleHtml = `<section class="daymark-searchstart__section" aria-labelledby="daymark-search-people-heading">
-					<h2 id="daymark-search-people-heading" class="daymark-section-heading">${esc(__('People', 'daymark'))}</h2>
+					<div class="daymark-searchstart__head">
+						<h2 id="daymark-search-people-heading" class="daymark-section-heading">${esc(__('People', 'daymark'))}</h2>
+						<a class="daymark-searchstart__all" href="#following" data-people-all aria-label="${esc(
+							__('See all the sites you follow', 'daymark')
+						)}">${esc(__('See all', 'daymark'))}</a>
+					</div>
 					<ul class="daymark-searchstart__people">${people
 						.map(
 							(person) =>
-								`<li><button type="button" class="daymark-searchstart__person" data-start-source="${esc(
-									person.source
-								)}">${searchAvatar(person.icon, person.label, 'daymark-searchstart__avatar')}<span class="daymark-searchstart__name">${esc(
+								`<li><button type="button" class="daymark-searchstart__person${
+									person.isNew ? ' is-new' : ''
+								}" data-start-source="${esc(person.source)}"${
+									person.isNew
+										? ` aria-label="${esc(
+												sprintf(
+													/* translators: %s: the name of a followed site that has posts newer than your last visit */
+													__('%s, new posts', 'daymark'),
+													person.label
+												)
+										  )}"`
+										: ''
+								}>${searchAvatar(person.icon, person.label, 'daymark-searchstart__avatar')}<span class="daymark-searchstart__name">${esc(
 									person.label
 								)}</span></button></li>`
 						)
@@ -11310,8 +11359,17 @@
 				this.runSearch();
 				return;
 			}
+			if (event.target.closest('[data-people-all]')) {
+				// The link itself opens the Following page.
+				followingReturnTo = '#explore';
+				return;
+			}
 			const person = event.target.closest('[data-start-source]');
 			if (person) {
+				// Looked at, so its ring is done for this visit.
+				if (this._peopleLooked) {
+					this._peopleLooked.add(person.getAttribute('data-start-source'));
+				}
 				this.chooseSource(person.getAttribute('data-start-source'));
 				return;
 			}
@@ -11512,6 +11570,23 @@
 				return;
 			}
 			this.renderSuggestions(found);
+		},
+
+		// POST /explore/seen: tell the site Explore was opened now, and
+		// learn when it was opened before. The People row then rings the
+		// sites with a post received since. No answer means no rings.
+		async markVisit() {
+			let visit;
+			try {
+				visit = await apiPost('explore/seen', {});
+			} catch (err) {
+				return;
+			}
+			this._peopleSince = (visit && visit.previous) || '';
+			const start = root.querySelector('[data-search-start]');
+			if (this._peopleSince && start && start.isConnected && !start.hidden) {
+				this.renderStart();
+			}
 		},
 
 		// The most used tags, for the starting screen. Asked for once per
@@ -12368,7 +12443,7 @@
 			// Back from the Following page: the row it was opened from, not
 			// the top of Me. showScreen() calls init() before it records
 			// this screen, so currentScreen is still the one being left.
-			const fromFollowing = '#following' === currentScreen;
+			const fromFollowing = '#following' === currentScreen && '#me' === FollowingScreen.returnTo;
 			// Every draft when you came for the drafts; else the newest few.
 			this._draftsAll = showDrafts;
 
@@ -21690,15 +21765,29 @@
 	// --- Following: the sites you follow, a page under Me ---
 	//
 	// Opened by the Following row of Me's Connections card, with a Back
-	// button to Me. Every followed site, favorites first, then A to Z,
+	// button to Me, or by "See all" on Explore's People row, with a Back
+	// button to Explore. Every followed site, favorites first, then A to Z,
 	// each with its star for someone who can manage follows, plus Follow a
 	// site. Tapping a site shows its posts in Explore. This list used to
 	// sit at the bottom of Explore, under a People row of the same sites.
 	const FollowingScreen = {
 		render() {
+			// Where Back goes: Explore when its People row's "See all"
+			// opened this page, Me otherwise. It is kept on the history
+			// entry too (see init()), so returning to this page later, as
+			// with Back from a site's posts, still knows. Drawn again after
+			// following a site, it keeps what it had.
+			const saved = window.history.state && window.history.state.daymarkFollowingFrom;
+			if (followingReturnTo) {
+				this.returnTo = followingReturnTo;
+			} else if ('#following' !== currentScreen || !this.returnTo) {
+				this.returnTo = '#explore' === saved ? '#explore' : '#me';
+			}
+			followingReturnTo = '';
+			const fromExplore = '#explore' === this.returnTo;
 			return `
 			<header class="daymark-topbar">
-				${backLinkWithIcon('#me', __('Back to Me', 'daymark'))}
+				${backLinkWithIcon(this.returnTo, fromExplore ? __('Back to Explore', 'daymark') : __('Back to Me', 'daymark'))}
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Following', 'daymark'))}</h1>
 			</header>
 			<section class="daymark-screen">
@@ -21727,7 +21816,7 @@
 					<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 				</div>
 			</section>
-			${navFooterMarkup('me')}`;
+			${navFooterMarkup(fromExplore ? 'explore' : 'me')}`;
 		},
 
 		bindEvents() {
@@ -21750,6 +21839,13 @@
 		},
 
 		async init() {
+			// Before showScreen() stamps this history entry, which keeps
+			// what is already on it.
+			const state = window.history.state;
+			window.history.replaceState(
+				Object.assign({}, state && 'object' === typeof state ? state : {}, { daymarkFollowingFrom: this.returnTo }),
+				''
+			);
 			const list = root.querySelector('[data-following-list]');
 			if (!list) {
 				return;

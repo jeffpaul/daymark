@@ -301,6 +301,7 @@ do_action('daymark_import_responses', $post_id, $network_id);  // backflow trigg
 | POST | `/daymark/v1/marks/{id}/speech` | Yes — edit_posts + nonce (same visibility rule as GET /marks/{id}/content; Read to me must be on; `ACTION_SPEECH` only when a new recording is made — see the Read to me decision) |
 | POST | `/daymark/v1/subscription-posts/{id}/speech` | Yes — edit_posts + nonce (same as above, for a followed site's cached post) |
 | GET | `/daymark/v1/featured-content/oembed` | Yes — edit_posts + nonce (the Featured Content editor panel's own live-preview lookup for a pasted URL; delegates to Daymark_Subscription_Oembed::resolve() — see the Featured Content decision below) |
+| POST | `/daymark/v1/explore/seen` | Yes — edit_posts + nonce (records that the current user opened Explore now and returns the visit before it, so the People row can ring who has posted since; a pure local per-user write, no rate limit — see the People ring and See all decision) |
 | POST | `/daymark/v1/timeline/last-seen` | Yes — edit_posts + nonce (a pure local per-user write, no rate limit; see the Timeline reading position decision) |
 | POST | `/daymark/v1/timeline/position` | Yes — edit_posts + nonce (a pure local per-user write, no rate limit; see the Timeline reading position decision) |
 | POST | `/daymark/v1/interaction-hints/{hint}/seen` | Yes — edit_posts + nonce (a pure local per-user write, no rate limit; see the interaction-hint seen state decision) |

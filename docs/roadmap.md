@@ -354,7 +354,9 @@ decision rows for the full technical record.
   search on top with a Bookmarks button beside it, then the People row
   (whoever posted last first) and "On this day"; "Browse by type" went,
   since the type chips cover it, and the Following list moved to a page
-  under Me ([#618](https://github.com/jeffpaul/daymark/pull/618)). Notifications left the header
+  under Me ([#618](https://github.com/jeffpaul/daymark/pull/618)). People rings whoever has posted since your
+  last visit, and "See all" beside it opens that page
+  ([#619](https://github.com/jeffpaul/daymark/pull/619)). Notifications left the header
   bell for its own tab, which shows an unread mark. One icon for the merged
   tab: a magnifying glass with the compass needle inside. Old Search links
   still open it. ([#615](https://github.com/jeffpaul/daymark/pull/615))
