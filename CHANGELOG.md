@@ -29,7 +29,7 @@ can't act on them.
 
 ### Changed
 
-- Explore and Search are now one tab. Search sits at the top, and under it are your recent searches, the people you follow, your most-used tags, Bookmarks, On this day and the sites you follow. The tab's icon is a magnifying glass with the compass needle inside. ([#615](https://github.com/jeffpaul/daymark/pull/615))
+- Explore and Search are now one tab. Search sits at the top with a Bookmarks button beside it, and under it are your recent searches, the people you follow, your most-used tags, On this day and the sites you follow. The tab's icon is a magnifying glass with the compass needle inside. ([#615](https://github.com/jeffpaul/daymark/pull/615))
 - Notifications is now a tab in the bottom bar, where Search used to be, and it shows a mark when something new is waiting. The bell is gone from the top of each screen. ([#615](https://github.com/jeffpaul/daymark/pull/615))
 - With nothing typed, search shows a quiet starting screen where it used to show a copy of the Timeline. Its filters now sit in one row that slides sideways, so results start higher on the screen. ([#615](https://github.com/jeffpaul/daymark/pull/615))
 

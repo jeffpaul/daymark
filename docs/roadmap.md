@@ -351,8 +351,8 @@ decision rows for the full technical record.
   [#269](https://github.com/jeffpaul/daymark/issues/269). ([#615](https://github.com/jeffpaul/daymark/pull/615))
 - [x] **Explore and Search as one tab, Notifications in the bar**: the
   bottom nav is now Timeline, Explore, +New, Notifications, Me. Explore has
-  search on top, then Bookmarks, "On this day", and Following; "Browse by
-  type" went, since the type chips cover it. Notifications left the header
+  search on top with a Bookmarks button beside it, then "On this day" and
+  Following; "Browse by type" went, since the type chips cover it. Notifications left the header
   bell for its own tab, which shows an unread mark. One icon for the merged
   tab: a magnifying glass with the compass needle inside. Old Search links
   still open it. ([#615](https://github.com/jeffpaul/daymark/pull/615))

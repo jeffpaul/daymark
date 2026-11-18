@@ -3617,13 +3617,13 @@ test('search: on the Explore tab, a query + type filter narrow the results', asy
 	await expect(page.locator('[data-search-start]')).toBeVisible();
 });
 
-// Explore and Search are one tab (issue #269): search on top, and under
-// its starting screen what Explore always had (Bookmarks, On this day, the
-// sites you follow). Each of those searches in place instead of leaving
-// for another screen. The followed sites are canned here, so the test
+// Explore and Search are one tab (issue #269): search on top with the
+// Bookmarks button beside it, and under its starting screen what Explore
+// always had (On this day, the sites you follow). Bookmarks and a followed
+// site search in place instead of leaving for another screen. The followed sites are canned here, so the test
 // needs no real feed, and "On this day" is handed a Mark from today, since
 // a test site has none from earlier years.
-test('explore: search on top, with Bookmarks, On this day and Following below', async ({ page }) => {
+test('explore: search on top with Bookmarks beside it, On this day and Following below', async ({ page }) => {
 	const memory = `E2E memory ${RUN_ID}`;
 
 	await loginAs(page);
@@ -3675,7 +3675,20 @@ test('explore: search on top, with Bookmarks, On this day and Following below', 
 	await expect(start).toBeVisible();
 	await expect(sections).toBeVisible();
 	await expect(list).toBeHidden();
-	await expect(sections.locator('[data-explore-bookmarks]')).toBeVisible();
+	// Bookmarks sits beside the search box: on the same row, inside the
+	// screen, a full-size tap target, and not down among the sections.
+	const bookmarks = page.locator('[data-explore-bookmarks]');
+	await expect(bookmarks).toBeVisible();
+	await expect(bookmarks).toHaveAccessibleName('Bookmarks');
+	await expect(bookmarks).toHaveAttribute('aria-pressed', 'false');
+	await expect(sections.locator('[data-explore-bookmarks]')).toHaveCount(0);
+	const inputBox = await input.boundingBox();
+	const bookmarksBox = await bookmarks.boundingBox();
+	expect(bookmarksBox.x).toBeGreaterThan(inputBox.x + inputBox.width);
+	expect(bookmarksBox.x + bookmarksBox.width).toBeLessThanOrEqual(page.viewportSize().width);
+	expect(Math.abs(bookmarksBox.y - inputBox.y)).toBeLessThanOrEqual(2);
+	expect(bookmarksBox.width).toBeGreaterThanOrEqual(44);
+	expect(bookmarksBox.height).toBeGreaterThanOrEqual(44);
 	const memories = sections.locator('[data-explore-memories]');
 	await expect(memories.getByText(memory).first()).toBeVisible();
 	await expect(sections.locator('[data-follow-site]')).toBeVisible();
@@ -3705,15 +3718,26 @@ test('explore: search on top, with Bookmarks, On this day and Following below', 
 	await expect(sections).toBeVisible();
 	await expect(start).toBeVisible();
 
-	// Bookmarks works the same way, and says what it is showing.
-	await sections.locator('[data-explore-bookmarks]').click();
+	// Bookmarks works the same way: it stays pressed and says what it is
+	// showing, and a second tap lets go.
+	await bookmarks.click();
+	await expect(bookmarks).toHaveAttribute('aria-pressed', 'true');
 	await expect(page.locator('[data-search-bookmarks-banner]')).toBeVisible();
 	await expect(sections).toBeHidden();
 	await expect(list).toBeVisible();
+	await bookmarks.click();
+	await expect(bookmarks).toHaveAttribute('aria-pressed', 'false');
+	await expect(page.locator('[data-search-bookmarks-banner]')).toBeHidden();
+	await expect(sections).toBeVisible();
+
+	// "Show everything" lets go too, and the button follows.
+	await bookmarks.click();
+	await expect(bookmarks).toHaveAttribute('aria-pressed', 'true');
+	await page.locator('[data-search-clear-bookmarks]').click();
+	await expect(bookmarks).toHaveAttribute('aria-pressed', 'false');
+	await expect(sections).toBeVisible();
 
 	// Typing searches as it always did.
-	await page.locator('[data-search-clear-bookmarks]').click();
-	await expect(sections).toBeVisible();
 	await input.fill(`nothing-matches-${RUN_ID}`);
 	await expect(sections).toBeHidden();
 	await expect(list).toContainText('Nothing matches');

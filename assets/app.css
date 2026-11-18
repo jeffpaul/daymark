@@ -2447,37 +2447,53 @@ button.daymark-stat {
 }
 
 /* --- Explore --- */
-/* auto-fit (not a fixed repeat(4, 1fr)) so a 5th type (Checkin, issue
-   #143) wraps to its own evenly-sized row instead of a lone narrow item
-   stranded under an otherwise-empty row. */
-.daymark-exploretypes {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+/* The search box with the Bookmarks button beside it. The button is a
+   square the height of the box, so both read as one row. Pressed means
+   the results are your bookmarks: it takes the accent wash a chosen
+   filter chip has, and its icon fills in. */
+.daymark-searchrow {
+	display: flex;
+	align-items: stretch;
 	gap: var(--daymark-spacing-sm);
 }
 
-.daymark-exploretype {
-	display: flex;
-	flex-direction: column;
+.daymark-searchrow .daymark-input {
+	flex: 1;
+	min-width: 0;
+	/* A longer placeholder (another language, a narrow phone) ends in an
+	   ellipsis instead of a cut-off letter. */
+	text-overflow: ellipsis;
+}
+
+.daymark-searchsaved {
+	display: inline-flex;
+	flex: none;
 	align-items: center;
 	justify-content: center;
-	gap: var(--daymark-spacing-xs);
-	min-height: 72px;
-	padding: var(--daymark-spacing-sm);
+	min-width: var(--daymark-input-height);
+	min-height: var(--daymark-tap-min);
+	padding: 0;
 	border: 1px solid var(--daymark-border);
-	border-radius: var(--daymark-radius);
+	border-radius: var(--daymark-radius-sm);
 	background: var(--daymark-bg);
 	color: var(--daymark-text-primary);
-	font-size: 13px;
-	font-weight: 600;
 	cursor: pointer;
 }
 
-.daymark-exploretype:hover,
-.daymark-exploretype:focus-visible {
-	color: var(--daymark-accent);
-	border-color: var(--daymark-accent-light);
+.daymark-searchsaved:hover,
+.daymark-searchsaved[aria-pressed='true'] {
 	background: var(--daymark-accent-wash);
+	border-color: var(--daymark-accent-light);
+	color: var(--daymark-accent-deep);
+}
+
+.daymark-searchsaved[aria-pressed='true'] .daymark-icon {
+	fill: currentColor;
+}
+
+.daymark-searchsaved:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
 }
 
 /* --- Me --- */

@@ -10689,9 +10689,14 @@
 				<label class="daymark-visually-hidden" for="daymark-search-input">${esc(
 					__('Search Daymark', 'daymark')
 				)}</label>
-				<input type="search" id="daymark-search-input" class="daymark-input" data-search-input placeholder="${esc(
-					__('Search your Marks and the sites you follow', 'daymark')
-				)}" autocomplete="off" />
+				<div class="daymark-searchrow">
+					<input type="search" id="daymark-search-input" class="daymark-input" data-search-input placeholder="${esc(
+						__('Search Marks and followed sites', 'daymark')
+					)}" autocomplete="off" />
+					<button type="button" class="daymark-searchsaved" data-explore-bookmarks aria-pressed="false" aria-label="${esc(
+						__('Bookmarks', 'daymark')
+					)}" title="${esc(__('Bookmarks', 'daymark'))}">${navIcon(BOOKMARK_GLYPH)}</button>
+				</div>
 				<div class="daymark-searchfilters" data-search-filters>
 					<label class="daymark-visually-hidden" for="daymark-date-filter">${esc(
 						__('Filter by date', 'daymark')
@@ -10735,16 +10740,6 @@
 				</p>
 				<div class="daymark-searchstart" data-search-start hidden></div>
 				<div class="daymark-exploresections" data-explore-sections hidden>
-					<section class="daymark-recent" aria-labelledby="daymark-explore-bookmarks-heading">
-						<h2 id="daymark-explore-bookmarks-heading" class="daymark-section-heading">${esc(
-							__('Bookmarks', 'daymark')
-						)}</h2>
-						<div class="daymark-exploretypes">
-							<button type="button" class="daymark-exploretype" data-explore-bookmarks>${navIcon(
-								BOOKMARK_GLYPH
-							)}<span>${esc(__('Saved for offline', 'daymark'))}</span></button>
-						</div>
-					</section>
 					<section class="daymark-recent" aria-labelledby="daymark-explore-memories-heading">
 						<h2 id="daymark-explore-memories-heading" class="daymark-section-heading">${esc(
 							__('On this day', 'daymark')
@@ -10881,15 +10876,15 @@
 				list.addEventListener('click', (event) => onFeedListClick(this, event));
 			}
 
-			// The sections under the starting screen. Each choice searches
-			// in place, and the results start at the top of the screen.
+			// Bookmarks sits beside the search box, so it is one tap away
+			// without scrolling. It switches your bookmarks on and off, and
+			// works together with the words and filters like any of them.
 			const bookmarksBtn = root.querySelector('[data-explore-bookmarks]');
 			if (bookmarksBtn) {
 				bookmarksBtn.addEventListener('click', () => {
-					this.searchBookmarked = true;
+					this.searchBookmarked = !this.searchBookmarked;
 					this.syncBookmarksBanner();
 					this.runSearch();
-					this.focusResultsFromTop();
 				});
 			}
 
@@ -11130,8 +11125,8 @@
 				.join('');
 		},
 
-		// A choice made far down the starting screen (Bookmarks, a followed
-		// site) puts its results at the top, so go there.
+		// A choice made far down the starting screen (a followed site)
+		// puts its results at the top, so go there.
 		focusResultsFromTop() {
 			window.scrollTo(0, 0);
 			const heading = root.querySelector('[data-daymark-focus]');
@@ -11188,6 +11183,10 @@
 			const banner = root.querySelector('[data-search-bookmarks-banner]');
 			if (banner) {
 				banner.hidden = !this.searchBookmarked;
+			}
+			const button = root.querySelector('[data-explore-bookmarks]');
+			if (button) {
+				button.setAttribute('aria-pressed', this.searchBookmarked ? 'true' : 'false');
 			}
 		},
 
