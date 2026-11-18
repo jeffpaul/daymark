@@ -264,6 +264,42 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			)
 		);
 
+		// The Me screen's "Your days" calendar (issue #295): which days of
+		// a month have posts, then one day's posts. Local reads, no rate
+		// limit — see Daymark_Calendar.
+		register_rest_route(
+			$this->namespace,
+			'/calendar',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_calendar_month' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					// No default: an omitted month means the current one.
+					'month' => array(
+						'type'              => 'string',
+						'validate_callback' => array( 'Daymark_Calendar', 'is_month' ),
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/calendar/(?P<day>[0-9]{4}-[0-9]{2}-[0-9]{2})',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_calendar_day' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'day' => array(
+						'type'              => 'string',
+						'validate_callback' => array( 'Daymark_Calendar', 'is_day' ),
+					),
+				),
+			)
+		);
+
 		register_rest_route(
 			$this->namespace,
 			'/ai/suggestions',
@@ -2369,6 +2405,37 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		return $response;
+	}
+
+	/**
+	 * GET /daymark/v1/calendar — one month of the Me screen's calendar: the
+	 * days this site published on, each with how many posts and a small
+	 * picture, plus the month's total, the all-time total, and the month of
+	 * the very first post. See Daymark_Calendar::month().
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response
+	 */
+	public function get_calendar_month( WP_REST_Request $request ) {
+		return rest_ensure_response( Daymark_Calendar::month( (string) $request->get_param( 'month' ) ) );
+	}
+
+	/**
+	 * GET /daymark/v1/calendar/{day} — the posts published on one day
+	 * (YYYY-MM-DD on the site's clock), newest first, in the same shape as
+	 * GET /timeline's own Marks so the app renders the same cards.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response
+	 */
+	public function get_calendar_day( WP_REST_Request $request ) {
+		$items = array();
+
+		foreach ( Daymark_Calendar::day_post_ids( (string) $request->get_param( 'day' ) ) as $post_id ) {
+			$items[] = array( 'item_type' => 'mark' ) + $this->prepare_mark_summary( $post_id );
+		}
+
+		return rest_ensure_response( $items );
 	}
 
 	/**

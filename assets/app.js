@@ -6165,14 +6165,6 @@
 	// scrolls its Drafts list into view instead of opening at the top.
 	let meShowDrafts = false;
 
-	function noDraftsHtml() {
-		return `<p class="daymark-empty">${sprintf(
-			/* translators: %s: "Start one" link */
-			__('No drafts. %s.', 'daymark'),
-			'<a href="#create">' + esc(__('Start one', 'daymark')) + '</a>'
-		)}</p>`;
-	}
-
 	// Home's one-line pointer to your drafts. Drafts used to render as full
 	// cards above the Timeline, where a few photo drafts could push the feed
 	// several screens down. Now Home shows a count, and the drafts
@@ -6748,7 +6740,10 @@
 	// core (renderMarkCore()) wrapped in its own tap target plus, for a
 	// Draft only, the shared ⋯ edit/delete actions menu. Used everywhere a
 	// Mark appears in a list: Home's Recent/Drafts, Search's results.
-	function renderMarkItem(item) {
+	// `options.compact` asks for the short card (title and one small picture)
+	// even when the site's compact list is off: Me's calendar lists a day's
+	// Marks that way.
+	function renderMarkItem(item, options) {
 		// Drafts look identical to published Marks otherwise — and their
 		// permalinks are invisible to visitors — so tapping one reopens the
 		// composer instead of opening it on the post-view screen. A
@@ -6836,7 +6831,7 @@
 						</div>
 					</div>
 				</div>`;
-		if (!isDraft && isCompactList()) {
+		if (!isDraft && (isCompactList() || (options && options.compact))) {
 			const compactTitleId = nextCardTitleId();
 			return `
 			<article class="daymark-recent__item-wrap daymark-recent__item-wrap--compact" data-item="${id}" aria-labelledby="${compactTitleId}">
@@ -8762,6 +8757,13 @@
 	// After a delete, keep the emptied region honest: hide an empty Drafts
 	// section, or show the right empty state for whichever list this was.
 	function reflectEmptied(screen, list) {
+		// Me's Drafts list shows only its first few: reload it, so a draft
+		// waiting behind "Show more" moves up, and the section goes away
+		// with its last draft.
+		if (list && list.hasAttribute('data-me-drafts')) {
+			MeScreen.refreshDrafts();
+			return;
+		}
 		if (!list || list.querySelector('[data-item]')) {
 			return;
 		}
@@ -8770,8 +8772,6 @@
 			if (section) {
 				section.hidden = true;
 			}
-		} else if (list.hasAttribute('data-me-drafts')) {
-			list.innerHTML = noDraftsHtml();
 		} else if (list.hasAttribute('data-search-results')) {
 			list.innerHTML =
 				'<p class="daymark-empty">' +
@@ -11201,13 +11201,168 @@
 
 	// --- Screen: Me ---
 	//
-	// A minimal foundation for the user's own Daymark identity: who they
-	// are, their drafts, and the surfaces that already exist elsewhere
-	// (Subscriptions in wp-admin, their WordPress profile — Notifications
-	// is reached from the header icon every screen now shares, so it's no
-	// longer a link in this body). Deliberately doesn't duplicate
-	// WordPress's own account settings — Edit profile and Log out link
-	// out to WordPress rather than reimplementing them.
+	// The user's own Daymark, one page top to bottom: who they are (name,
+	// site address, how many Marks since when), anything waiting on them
+	// (Scheduled, then Drafts, each hidden when empty), "Your days" (a
+	// month calendar of the days they published on, issue #295), and then
+	// the surfaces that already exist elsewhere, grouped as "App and
+	// account" (Subscriptions in wp-admin, their WordPress profile —
+	// Notifications is reached from the header icon every screen shares).
+	// Deliberately doesn't duplicate WordPress's own account settings —
+	// Edit profile and Log out link out to WordPress rather than
+	// reimplementing them.
+
+	// How many drafts Me lists before the rest wait behind "Show more".
+	const ME_DRAFTS_SHOWN = 3;
+
+	// --- Me: the "Your days" calendar's helpers ---
+	//
+	// A month is 'YYYY-MM' and a day 'YYYY-MM-DD', both on the site's own
+	// clock as GET /calendar sends them. They are only ever compared as
+	// strings or split into numbers, never read through this device's
+	// timezone.
+
+	const CALENDAR_PREV_GLYPH = '<polyline points="15 18 9 12 15 6"></polyline>';
+	const CALENDAR_NEXT_GLYPH = '<polyline points="9 18 15 12 9 6"></polyline>';
+
+	function calendarNavIcon(glyph) {
+		return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${glyph}</svg>`;
+	}
+
+	function calendarMonthOf(date) {
+		return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+	}
+
+	// "March 2024", with the month name in the site's language.
+	function calendarMonthLabel(month) {
+		const year = String(month).slice(0, 4);
+		const index = Number(String(month).slice(5, 7)) - 1;
+		return sprintf(
+			/* translators: 1: month name, 2: four-digit year. Together, a month such as "March 2024". */
+			__('%1$s %2$s', 'daymark'),
+			PHP_MONTH_NAMES[index] || '',
+			year
+		);
+	}
+
+	// The month `delta` months away from `month`.
+	function calendarShiftMonth(month, delta) {
+		const year = Number(String(month).slice(0, 4));
+		const index = Number(String(month).slice(5, 7)) - 1;
+		return calendarMonthOf(new Date(year, index + delta, 1));
+	}
+
+	// A day in the site's Date Format (Settings -> General).
+	function calendarDayLabel(day) {
+		const parts = String(day).split('-').map(Number);
+		return formatDateWithPhpFormat(new Date(parts[0], parts[1] - 1, parts[2]), config.dateFormat || 'F j, Y');
+	}
+
+	// Five weeks of empty squares, shown until the first month arrives so
+	// the screen below doesn't jump when it does.
+	function calendarGhostCells() {
+		return '<span class="daymark-cal__day daymark-cal__day--ghost" aria-hidden="true"></span>'.repeat(35);
+	}
+
+	// The grid for one month: a row of weekday names, then a square per
+	// day. A day with Marks is a button (tinted, with a small picture when
+	// one of its Marks has one); a day without is plain text that a screen
+	// reader skips, so what's read out is the list of days with Marks.
+	function calendarGridHtml(data, picked) {
+		const month = String(data.month);
+		const year = Number(month.slice(0, 4));
+		const monthIndex = Number(month.slice(5, 7)) - 1;
+		const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+		const weekStart = Math.min(6, Math.max(0, Number(data.week_starts_on) || 0));
+		const lead = (new Date(year, monthIndex, 1).getDay() - weekStart + 7) % 7;
+		const today = String(data.today || '');
+		const byDate = new Map();
+		data.days.forEach((entry) => {
+			if (entry && entry.date) {
+				byDate.set(String(entry.date), entry);
+			}
+		});
+
+		let html = '';
+		for (let i = 0; i < 7; i++) {
+			html += `<span class="daymark-cal__dow" aria-hidden="true">${esc(PHP_DAY_ABBR[(weekStart + i) % 7])}</span>`;
+		}
+		html += '<span class="daymark-cal__day daymark-cal__day--blank" aria-hidden="true"></span>'.repeat(lead);
+		for (let d = 1; d <= daysInMonth; d++) {
+			const date = month + '-' + String(d).padStart(2, '0');
+			const entry = byDate.get(date);
+			const classes = ['daymark-cal__day'];
+			if (date === today) {
+				classes.push('is-today');
+			} else if (today && date > today) {
+				classes.push('is-future');
+			}
+			if (!entry) {
+				html += `<span class="${classes.join(' ')}" aria-hidden="true"><span class="daymark-cal__num">${d}</span></span>`;
+				continue;
+			}
+			const count = Number(entry.count) || 0;
+			const isPicked = date === picked;
+			classes.push('daymark-cal__day--has');
+			if (entry.thumbnail) {
+				classes.push('daymark-cal__day--photo');
+			}
+			if (isPicked) {
+				classes.push('is-picked');
+			}
+			const label = sprintf(
+				/* translators: 1: a date, e.g. "March 4, 2025", 2: number of Marks published that day */
+				_n('%1$s, %2$s Mark', '%1$s, %2$s Marks', count, 'daymark'),
+				calendarDayLabel(date),
+				count
+			);
+			html += `<button type="button" class="${classes.join(' ')}" data-cal-pick="${esc(date)}" aria-pressed="${
+				isPicked ? 'true' : 'false'
+			}" aria-label="${esc(
+				date === today
+					? sprintf(
+							/* translators: %s: a day's description, e.g. "March 4, 2025, 2 Marks" */
+							__('%s, today', 'daymark'),
+							label
+					  )
+					: label
+			)}">${
+				entry.thumbnail ? `<img class="daymark-cal__thumb" src="${esc(entry.thumbnail)}" alt="" loading="lazy" />` : ''
+			}<span class="daymark-cal__num">${d}</span></button>`;
+		}
+		return html;
+	}
+
+	// The one quiet line under the grid. A count of Marks, never a streak
+	// and never a note about the days without one.
+	function calendarSummary(data, monthLabel) {
+		const total = Number(data.total) || 0;
+		const isCurrent = String(data.month) === String(data.today || '').slice(0, 7);
+		if (!(Number(data.all_time) > 0)) {
+			return __('The days you publish on will show up here.', 'daymark');
+		}
+		if (!total) {
+			return isCurrent
+				? __('Nothing published this month yet.', 'daymark')
+				: sprintf(
+						/* translators: %s: month and year, e.g. "March 2024" */
+						__('Nothing published in %s.', 'daymark'),
+						monthLabel
+				  );
+		}
+		return isCurrent
+			? sprintf(
+					/* translators: %s: number of Marks published this month */
+					_n('%s Mark this month', '%s Marks this month', total, 'daymark'),
+					total
+			  )
+			: sprintf(
+					/* translators: 1: number of Marks, 2: month and year, e.g. "March 2024" */
+					_n('%1$s Mark in %2$s', '%1$s Marks in %2$s', total, 'daymark'),
+					total,
+					monthLabel
+			  );
+	}
 
 	// A trailing icon plus screen-reader text for a Me row that opens a
 	// WordPress screen instead of a Daymark one.
@@ -11225,6 +11380,11 @@
 				: `<span class="daymark-meavatar daymark-meavatar--glyph" aria-hidden="true">${navIcon(
 						ME_GLYPH
 				  )}</span>`;
+			const siteHost = urlHostLabel(config.siteUrl || '');
+			// Arriving from Home's drafts row: drafts are known to exist, so
+			// their place is held while they load. Otherwise the section
+			// stays out of the way until there is a draft to show.
+			const holdDrafts = meShowDrafts;
 			return `
 			<header class="daymark-topbar">
 				${daymarkIconLink()}
@@ -11234,55 +11394,95 @@
 			<section class="daymark-screen">
 				<div class="daymark-meprofile">
 					${avatar}
-					<span class="daymark-mename">${esc(user.displayName || '')}</span>
+					<div class="daymark-meprofile__text">
+						<span class="daymark-mename">${esc(user.displayName || '')}</span>
+						${siteHost ? `<a class="daymark-mesite" href="${esc(config.siteUrl)}">${esc(siteHost)}</a>` : ''}
+						<span class="daymark-mesince" data-me-since hidden></span>
+					</div>
 				</div>
-				<nav class="daymark-melinks" aria-label="${esc(__('Your Daymark', 'daymark'))}">
-					<button type="button" class="daymark-melink" data-me-mymarks>${esc(__('My marks', 'daymark'))}</button>
-					${
-						config.canManageSubscriptions
-							? `<button type="button" class="daymark-melink" data-follow-site>${esc(__('Follow a site', 'daymark'))}</button>`
-							: ''
-					}
-					<button type="button" class="daymark-melink" data-me-install hidden>${esc(__('Install Daymark', 'daymark'))}</button>
-					${
-						config.bookmarkletUrl
-							? `<a class="daymark-melink" href="${esc(config.bookmarkletUrl)}">${esc(
-									__('Reblog from anywhere (bookmarklet)', 'daymark')
-							  )}</a>`
-							: ''
-					}
-					${
-						config.adminSubscriptionsUrl
-							? `<a class="daymark-melink" href="${esc(config.adminSubscriptionsUrl)}"><span class="daymark-melink__label">${esc(__('Subscriptions', 'daymark'))}</span>${leavesAppMarker()}</a>`
-							: ''
-					}
-					${
-						user.profileEditUrl
-							? `<a class="daymark-melink" href="${esc(user.profileEditUrl)}"><span class="daymark-melink__label">${esc(__('Edit profile', 'daymark'))}</span>${leavesAppMarker()}</a>`
-							: ''
-					}
-					${
-						user.logoutUrl
-							? `<a class="daymark-melink" href="${esc(user.logoutUrl)}" data-me-logout>${esc(
-									__('Log out', 'daymark')
-							  )}</a>`
-							: ''
-					}
-				</nav>
-				${pushSettingsMarkup()}
 				<section class="daymark-recent" aria-labelledby="daymark-me-scheduled-heading" data-me-scheduled-section hidden>
 					<h2 id="daymark-me-scheduled-heading" class="daymark-section-heading">${esc(
 						_x('Scheduled', 'heading: Marks set to publish later', 'daymark')
 					)}</h2>
 					<div class="daymark-recent__list" data-me-scheduled></div>
 				</section>
-				<section class="daymark-recent" aria-labelledby="daymark-me-drafts-heading">
+				<section class="daymark-recent" aria-labelledby="daymark-me-drafts-heading" data-me-drafts-section${
+					holdDrafts ? '' : ' hidden'
+				}>
 					<h2 id="daymark-me-drafts-heading" class="daymark-section-heading">${esc(__('Drafts', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-me-drafts>
 						${skeletonRows(2)}
 						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 					</div>
+					<button type="button" class="daymark-btn daymark-btn--text daymark-medrafts__more" data-me-drafts-more hidden></button>
 				</section>
+				<section class="daymark-medays" aria-labelledby="daymark-me-days-heading" data-me-days>
+					<div class="daymark-medays__head">
+						<h2 id="daymark-me-days-heading" class="daymark-section-heading">${esc(__('Your days', 'daymark'))}</h2>
+						<button type="button" class="daymark-medays__all" data-me-mymarks aria-label="${esc(
+							__('See all your Marks', 'daymark')
+						)}">${esc(__('See all', 'daymark'))}</button>
+					</div>
+					<div class="daymark-cal" data-cal aria-busy="true">
+						<div class="daymark-cal__head">
+							<h3 class="daymark-cal__month" data-cal-month aria-live="polite">${esc(
+								calendarMonthLabel(calendarMonthOf(new Date()))
+							)}</h3>
+							<div class="daymark-cal__nav">
+								<button type="button" class="daymark-cal__navbtn" data-cal-prev aria-label="${esc(
+									__('Previous month', 'daymark')
+								)}" disabled>${calendarNavIcon(CALENDAR_PREV_GLYPH)}</button>
+								<button type="button" class="daymark-cal__navbtn" data-cal-next aria-label="${esc(
+									__('Next month', 'daymark')
+								)}" disabled>${calendarNavIcon(CALENDAR_NEXT_GLYPH)}</button>
+							</div>
+						</div>
+						<div class="daymark-cal__grid" data-cal-grid>${calendarGhostCells()}</div>
+						<p class="daymark-cal__sum" data-cal-sum><span class="daymark-visually-hidden">${esc(
+							__('Loading', 'daymark')
+						)}</span></p>
+					</div>
+					<div class="daymark-medays__day" data-cal-day aria-live="polite" hidden>
+						<h3 class="daymark-medays__dayhead" data-cal-dayhead></h3>
+						<div class="daymark-recent__list" data-cal-daylist></div>
+					</div>
+				</section>
+				<section class="daymark-meapp" aria-labelledby="daymark-me-app-heading">
+					<h2 id="daymark-me-app-heading" class="daymark-section-heading">${esc(__('App and account', 'daymark'))}</h2>
+					<nav class="daymark-melinks" aria-labelledby="daymark-me-app-heading">
+						${
+							config.canManageSubscriptions
+								? `<button type="button" class="daymark-melink" data-follow-site>${esc(__('Follow a site', 'daymark'))}</button>`
+								: ''
+						}
+						<button type="button" class="daymark-melink" data-me-install hidden>${esc(__('Install Daymark', 'daymark'))}</button>
+						${
+							config.bookmarkletUrl
+								? `<a class="daymark-melink" href="${esc(config.bookmarkletUrl)}">${esc(
+										__('Reblog from anywhere (bookmarklet)', 'daymark')
+								  )}</a>`
+								: ''
+						}
+						${
+							config.adminSubscriptionsUrl
+								? `<a class="daymark-melink" href="${esc(config.adminSubscriptionsUrl)}"><span class="daymark-melink__label">${esc(__('Subscriptions', 'daymark'))}</span>${leavesAppMarker()}</a>`
+								: ''
+						}
+						${
+							user.profileEditUrl
+								? `<a class="daymark-melink" href="${esc(user.profileEditUrl)}"><span class="daymark-melink__label">${esc(__('Edit profile', 'daymark'))}</span>${leavesAppMarker()}</a>`
+								: ''
+						}
+						${
+							user.logoutUrl
+								? `<a class="daymark-melink" href="${esc(user.logoutUrl)}" data-me-logout>${esc(
+										__('Log out', 'daymark')
+								  )}</a>`
+								: ''
+						}
+					</nav>
+				</section>
+				${pushSettingsMarkup()}
 			</section>
 			${navFooterMarkup('me')}`;
 		},
@@ -11322,12 +11522,61 @@
 			if (drafts) {
 				drafts.addEventListener('click', (event) => onFeedListClick(this, event));
 			}
+			const moreDrafts = root.querySelector('[data-me-drafts-more]');
+			if (moreDrafts) {
+				moreDrafts.addEventListener('click', () => {
+					this._draftsAll = true;
+					this.showDrafts(false);
+				});
+			}
 			// Scheduled Marks, above Drafts: tap one to change it; its ⋯
 			// menu has Change time, Publish now, Cancel schedule, and Delete.
 			const scheduled = root.querySelector('[data-me-scheduled]');
 			if (scheduled) {
 				scheduled.addEventListener('click', (event) => onFeedListClick(this, event));
 			}
+
+			// Your days: step a month back or forward, tap a day to list
+			// what you published on it, tap one of those to open it.
+			const prev = root.querySelector('[data-cal-prev]');
+			if (prev) {
+				prev.addEventListener('click', () => this.stepMonth(-1));
+			}
+			const next = root.querySelector('[data-cal-next]');
+			if (next) {
+				next.addEventListener('click', () => this.stepMonth(1));
+			}
+			const grid = root.querySelector('[data-cal-grid]');
+			if (grid) {
+				grid.addEventListener('click', (event) => {
+					const day = event.target.closest('[data-cal-pick]');
+					if (day) {
+						this.pickDay(day.getAttribute('data-cal-pick'));
+					}
+				});
+				// A day's picture that fails to load gives way to the plain
+				// tinted square ('error' doesn't bubble, so it's caught on
+				// the way down).
+				grid.addEventListener(
+					'error',
+					(event) => {
+						const img = event.target;
+						if (img && img.classList && img.classList.contains('daymark-cal__thumb')) {
+							const cell = img.closest('.daymark-cal__day');
+							if (cell) {
+								cell.classList.remove('daymark-cal__day--photo');
+							}
+							img.remove();
+						}
+					},
+					true
+				);
+			}
+			const dayList = root.querySelector('[data-cal-daylist]');
+			if (dayList) {
+				dayList.addEventListener('click', (event) => onFeedListClick(this, event));
+			}
+
 			bindDismissible(this, [itemMenusDismissEntry(), navFooterDismissEntry(this)]);
 			bindNavFooter(this);
 		},
@@ -11335,10 +11584,36 @@
 		async init() {
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
+			// The Marks of the day that's open — what saveFeedSnapshot()
+			// captures when one is opened.
+			this._items = [];
 			this._draftsSeq = 0;
+			this._drafts = [];
+			this._calSeq = 0;
+			this._daySeq = 0;
+			// Months already fetched on this visit, so stepping back and
+			// forth doesn't ask twice.
+			this._calMonths = new Map();
+			this._cal = null;
+			this.calMonth = '';
+			this.calDay = '';
 			const showDrafts = meShowDrafts;
 			meShowDrafts = false;
-			await this.loadDrafts(showDrafts);
+			// Every draft when you came for the drafts; else the newest few.
+			this._draftsAll = showDrafts;
+
+			// Coming back from a Mark opened from a day: the same month,
+			// the same day, and that Mark's card back in place.
+			const snapshot = takeFeedSnapshot('#me');
+			const calendar = this.loadMonth(snapshot ? snapshot.calMonth : '').then(() => {
+				if (snapshot && snapshot.calDay) {
+					this.showDay(snapshot.calDay, snapshot.items);
+				}
+			});
+			await Promise.all([this.loadDrafts(showDrafts), calendar]);
+			if (snapshot && '#me' === currentScreen) {
+				requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
+			}
 		},
 
 		// Reload the Drafts list when Me is on screen: a draft saved (or
@@ -11362,6 +11637,43 @@
 			bindDraftTaps(list);
 		},
 
+		// The Drafts list, at the top of the screen. Hidden when there are
+		// none. Past ME_DRAFTS_SHOWN drafts, the rest wait behind a "Show
+		// more" button, so a long list doesn't push Your days out of
+		// reach. Coming from Home's drafts row shows them all.
+		showDrafts(scrollTo) {
+			const section = root.querySelector('[data-me-drafts-section]');
+			const list = root.querySelector('[data-me-drafts]');
+			const more = root.querySelector('[data-me-drafts-more]');
+			if (!section || !list) {
+				return;
+			}
+			const all = this._drafts;
+			const shown = this._draftsAll ? all : all.slice(0, ME_DRAFTS_SHOWN);
+			const hidden = all.length - shown.length;
+			list.innerHTML = shown.map((item) => renderMarkItem(item)).join('');
+			section.hidden = !all.length;
+			bindDraftTaps(list);
+			if (more) {
+				more.hidden = hidden < 1;
+				more.textContent = sprintf(
+					/* translators: %s: number of drafts not shown yet */
+					_n('Show %s more draft', 'Show %s more drafts', hidden, 'daymark'),
+					hidden
+				);
+			}
+			if (scrollTo && all.length) {
+				// After showScreen()'s own header focus, which scrolls to
+				// the top.
+				requestAnimationFrame(() => {
+					const heading = root.querySelector('#daymark-me-drafts-heading');
+					if (heading) {
+						heading.scrollIntoView({ block: 'start' });
+					}
+				});
+			}
+		},
+
 		async loadDrafts(showDrafts) {
 			const list = root.querySelector('[data-me-drafts]');
 			if (!list) {
@@ -11375,29 +11687,22 @@
 					apiGet('marks?status=draft&per_page=50'),
 					false === config.canPublish ? [] : apiGet('marks?status=future&per_page=50').catch(() => []),
 				]);
-				const draftItems = Array.isArray(drafts) ? drafts : [];
 				if (seq !== this._draftsSeq || !list.isConnected) {
 					return;
 				}
 				this.showScheduled(Array.isArray(scheduled) ? scheduled.filter((m) => 'future' === m.status) : []);
-				if (!draftItems.length) {
-					list.innerHTML = noDraftsHtml();
-					return;
-				}
-				list.innerHTML = draftItems.map((item) => renderMarkItem(item)).join('');
-				bindDraftTaps(list);
-				if (showDrafts) {
-					// After showScreen()'s own header focus, which scrolls to
-					// the top.
-					requestAnimationFrame(() => {
-						const heading = root.querySelector('#daymark-me-drafts-heading');
-						if (heading) {
-							heading.scrollIntoView({ block: 'start' });
-						}
-					});
-				}
+				this._drafts = Array.isArray(drafts) ? drafts : [];
+				this.showDrafts(showDrafts);
 			} catch (err) {
 				if (seq === this._draftsSeq && list.isConnected) {
+					const section = root.querySelector('[data-me-drafts-section]');
+					const more = root.querySelector('[data-me-drafts-more]');
+					if (section) {
+						section.hidden = false;
+					}
+					if (more) {
+						more.hidden = true;
+					}
 					list.innerHTML =
 						'<p class="daymark-error" role="alert">' +
 						sprintf(
@@ -11408,6 +11713,189 @@
 						'</p>';
 				}
 			}
+		},
+
+		// --- Your days: a month calendar of the days you published on ---
+		//
+		// GET /calendar answers for one month: its days with posts (a
+		// count and a small picture each), the month's total, the all-time
+		// total, the month of the very first post, today on the site's
+		// clock, and the day the site's week starts on. Days are the
+		// site's calendar days, so the grid is built from those strings
+		// and never from this device's own timezone.
+
+		// Fetch a month ('' for the current one) and draw it.
+		async loadMonth(month) {
+			const cal = root.querySelector('[data-cal]');
+			if (!cal) {
+				return;
+			}
+			const seq = ++this._calSeq;
+			let data = month ? this._calMonths.get(month) : null;
+			if (!data) {
+				cal.setAttribute('aria-busy', 'true');
+				try {
+					data = await apiGet('calendar' + (month ? '?month=' + encodeURIComponent(month) : ''));
+				} catch (err) {
+					if (seq === this._calSeq && cal.isConnected) {
+						cal.removeAttribute('aria-busy');
+						const sum = cal.querySelector('[data-cal-sum]');
+						if (sum) {
+							sum.innerHTML = isAuthExpiredError(err)
+								? authExpiredErrorHtml()
+								: '<span class="daymark-error" role="alert">' +
+								  esc(__("Couldn't load your days. Try again in a moment.", 'daymark')) +
+								  '</span>';
+						}
+						// Let the arrows try again from the month still shown.
+						this.syncMonthNav();
+					}
+					return;
+				}
+				if (seq !== this._calSeq || !cal.isConnected) {
+					return;
+				}
+				if (!data || !data.month || !Array.isArray(data.days)) {
+					return;
+				}
+				this._calMonths.set(data.month, data);
+			}
+			this._cal = data;
+			this.calMonth = data.month;
+			cal.removeAttribute('aria-busy');
+			this.renderMonth();
+		},
+
+		renderMonth() {
+			const data = this._cal;
+			const cal = root.querySelector('[data-cal]');
+			if (!data || !cal) {
+				return;
+			}
+			const title = cal.querySelector('[data-cal-month]');
+			const grid = cal.querySelector('[data-cal-grid]');
+			const sum = cal.querySelector('[data-cal-sum]');
+			const label = calendarMonthLabel(data.month);
+			if (title) {
+				title.textContent = label;
+			}
+			if (grid) {
+				grid.innerHTML = calendarGridHtml(data, this.calDay);
+			}
+			if (sum) {
+				sum.textContent = calendarSummary(data, label);
+			}
+			this.syncMonthNav();
+
+			// The name block's quiet line: how many Marks, and since when.
+			const since = root.querySelector('[data-me-since]');
+			if (since) {
+				const all = Number(data.all_time) || 0;
+				since.hidden = !all || !data.first_month;
+				if (!since.hidden) {
+					since.textContent = sprintf(
+						/* translators: 1: number of Marks, 2: month and year of the first one, e.g. "March 2024" */
+						_n('%1$s Mark since %2$s', '%1$s Marks since %2$s', all, 'daymark'),
+						all,
+						calendarMonthLabel(data.first_month)
+					);
+				}
+			}
+		},
+
+		// Previous stops at the month of the first Mark; Next stops at the
+		// current month.
+		syncMonthNav() {
+			const data = this._cal;
+			const prev = root.querySelector('[data-cal-prev]');
+			const next = root.querySelector('[data-cal-next]');
+			if (!data || !prev || !next) {
+				return;
+			}
+			prev.disabled = !data.first_month || data.month <= data.first_month;
+			next.disabled = data.month >= String(data.today || '').slice(0, 7);
+		},
+
+		stepMonth(delta) {
+			if (!this._cal) {
+				return;
+			}
+			this.closeDay();
+			return this.loadMonth(calendarShiftMonth(this._cal.month, delta));
+		},
+
+		// Tap a day to list its Marks; tap it again to put the list away.
+		pickDay(day) {
+			if (day === this.calDay) {
+				this.closeDay();
+				return;
+			}
+			return this.showDay(day);
+		},
+
+		closeDay() {
+			this._daySeq++;
+			this.calDay = '';
+			this._items = [];
+			const panel = root.querySelector('[data-cal-day]');
+			if (panel) {
+				panel.hidden = true;
+			}
+			this.markPickedDay();
+		},
+
+		markPickedDay() {
+			root.querySelectorAll('[data-cal-pick]').forEach((cell) => {
+				const picked = cell.getAttribute('data-cal-pick') === this.calDay;
+				cell.classList.toggle('is-picked', picked);
+				cell.setAttribute('aria-pressed', picked ? 'true' : 'false');
+			});
+		},
+
+		// List one day's Marks under the calendar. `items` skips the fetch
+		// when they're already in hand (coming back from one of them).
+		async showDay(day, items) {
+			const panel = root.querySelector('[data-cal-day]');
+			const head = root.querySelector('[data-cal-dayhead]');
+			const list = root.querySelector('[data-cal-daylist]');
+			if (!panel || !head || !list) {
+				return;
+			}
+			const seq = ++this._daySeq;
+			this.calDay = day;
+			this.markPickedDay();
+			head.textContent = calendarDayLabel(day);
+			panel.hidden = false;
+			let arr = Array.isArray(items) ? items : null;
+			if (!arr) {
+				list.innerHTML =
+					skeletonRows(1) + `<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>`;
+				try {
+					arr = await apiGet('calendar/' + encodeURIComponent(day));
+				} catch (err) {
+					if (seq === this._daySeq && list.isConnected) {
+						list.innerHTML = isAuthExpiredError(err)
+							? authExpiredErrorHtml()
+							: '<p class="daymark-error" role="alert">' +
+							  esc(__("Couldn't load that day. Try again in a moment.", 'daymark')) +
+							  '</p>';
+					}
+					return;
+				}
+				if (seq !== this._daySeq || !list.isConnected) {
+					return;
+				}
+				arr = Array.isArray(arr) ? arr : [];
+			}
+			this._byMarkId.clear();
+			this._items = arr.slice();
+			arr.forEach((item) => rememberItem(this, item));
+			// Always the short card (title and one small picture), whatever
+			// the site's list setting: a day's Marks are a list to pick
+			// from, and the calendar above already shows the pictures.
+			list.innerHTML = arr.length
+				? arr.map((item) => renderMarkItem(item, { compact: true })).join('')
+				: `<p class="daymark-empty">${esc(__('Nothing published that day.', 'daymark'))}</p>`;
 		},
 	};
 
@@ -15113,7 +15601,8 @@
 	// it had rendered (on Home, all infinite-scroll pages, in order), that
 	// screen's own state (Home's paging, Search's filters), and where the
 	// tapped card sat on screen. HomeScreen.init(), SearchScreen.init(),
-	// and ExploreScreen.init() (its "On this day" cards) consume it when `hash` matches. Kept in memory only: a reload or a
+	// ExploreScreen.init() (its "On this day" cards), and MeScreen.init()
+	// (the day open under its calendar) consume it when `hash` matches. Kept in memory only: a reload or a
 	// cold start begins at the top as before. showScreen() discards it
 	// once the reader goes anywhere other than #post/#reblog or back.
 	let feedSnapshot = null;
@@ -15126,6 +15615,10 @@
 			extra = { recentPage: screen.recentPage, recentDone: screen.recentDone };
 		} else if (screen === ExploreScreen) {
 			hash = '#explore';
+		} else if (screen === MeScreen) {
+			// The day open under the calendar, and its month.
+			hash = '#me';
+			extra = { calMonth: screen.calMonth, calDay: screen.calDay };
 		} else if (screen === SearchScreen) {
 			hash = '#search';
 			extra = {
