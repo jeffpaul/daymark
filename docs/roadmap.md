@@ -374,9 +374,9 @@ decision rows for the full technical record.
   — all three directions are done: drafts are managed on Me itself (Edit,
   Publish, Delete); browsing your own Marks is "Your days", a month
   calendar of the days you published on, with Drafts above it; and a
-  Connections card shows your site, where your Marks are shared, how many
-  sites you follow (and whether any need a look) and how many
-  notifications are new, above the links grouped under "App and account".
+  Connections card shows your site, where your Marks are shared and how
+  many sites you follow (and whether any need a look), above the links
+  grouped under "App and account".
 
 ---
 

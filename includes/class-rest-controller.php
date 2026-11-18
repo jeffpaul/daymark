@@ -2534,9 +2534,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 	/**
 	 * GET /daymark/v1/connections — the Me screen's Connections card: your
-	 * site, where a Mark is also shared, how many sites are followed (and
-	 * how many are failing), and how many notifications are unread. See
-	 * Daymark_Connections::summary().
+	 * site, where a Mark is also shared, and how many sites are followed
+	 * (and how many are failing). See Daymark_Connections::summary().
 	 *
 	 * @param WP_REST_Request $request The request (no params).
 	 * @return WP_REST_Response

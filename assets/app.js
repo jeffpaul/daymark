@@ -6223,6 +6223,11 @@
 	// composer. ExploreScreen.init() consumes and clears it.
 	let searchPreset = null;
 
+	// 'following' when Me's Following row was just tapped: Explore then
+	// opens with its Following list at the top of the screen instead of
+	// its search box. One-shot, like searchPreset.
+	let exploreFocus = '';
+
 	// One-shot: set when Home's drafts row is tapped, so the Me screen
 	// scrolls its Drafts list into view instead of opening at the top.
 	let meShowDrafts = false;
@@ -10751,7 +10756,7 @@
 					</section>
 					<section class="daymark-recent" aria-labelledby="daymark-explore-following-heading">
 						<div class="daymark-follow__heading">
-							<h2 id="daymark-explore-following-heading" class="daymark-section-heading">${esc(
+							<h2 id="daymark-explore-following-heading" class="daymark-section-heading" tabindex="-1">${esc(
 								__('Following', 'daymark')
 							)}</h2>
 							${
@@ -10966,7 +10971,33 @@
 			// Coming back from a post opened here: restore the same
 			// filters and results, and the card's place, instead of
 			// searching again from the top (see feedSnapshot).
-			const snapshot = takeFeedSnapshot('#explore');
+			let snapshot = takeFeedSnapshot('#explore');
+
+			// From Me's Following row: the screen at rest (never results
+			// left over from an earlier visit), with the Following list at
+			// the top. Each section above the list loads on its own and
+			// moves it, so the list is put back in place as each arrives,
+			// until the person touches the screen.
+			if (this._followingWatch) {
+				this._followingWatch.abort();
+			}
+			this._toFollowing = 'following' === exploreFocus;
+			this._followingFocused = false;
+			exploreFocus = '';
+			if (this._toFollowing) {
+				snapshot = null;
+				searchPreset = null;
+				const watch = new AbortController();
+				this._followingWatch = watch;
+				const stop = () => {
+					this._toFollowing = false;
+					watch.abort();
+				};
+				['wheel', 'touchstart', 'pointerdown', 'keydown'].forEach((type) => {
+					window.addEventListener(type, stop, { passive: true, signal: watch.signal });
+				});
+			}
+
 			if (snapshot) {
 				searchPreset = null;
 				this.searchQuery = snapshot.query || '';
@@ -11028,6 +11059,9 @@
 			// one failing never blocks another.
 			this.loadMemories();
 			await this.runSearch();
+			// After showScreen()'s own header focus, which scrolls to the
+			// top.
+			requestAnimationFrame(() => this.showFollowingList());
 		},
 
 		// Fills "On this day" with these cards, or takes the section away
@@ -11047,6 +11081,7 @@
 			if (this.isIdle()) {
 				this.useMemoriesAsItems();
 			}
+			this.showFollowingList();
 		},
 
 		useMemoriesAsItems() {
@@ -11123,6 +11158,27 @@
 					return `<div class="daymark-follow__row">${open}${favoriteToggleMarkup(sub.id, label, !!sub.favorite)}</div>`;
 				})
 				.join('');
+		},
+
+		// The Following list at the top of the screen, just under the
+		// header, for someone who came from Me's Following row (see
+		// init()). The first time, its heading also takes focus, so a
+		// screen reader says where this is.
+		showFollowingList() {
+			if (!this._toFollowing || !this.isIdle()) {
+				return;
+			}
+			const heading = root.querySelector('#daymark-explore-following-heading');
+			if (!heading || !heading.isConnected) {
+				return;
+			}
+			const header = root.querySelector('.daymark-topbar');
+			const offset = (header ? header.offsetHeight : 0) + 12;
+			window.scrollTo(0, Math.max(0, heading.getBoundingClientRect().top + window.scrollY - offset));
+			if (!this._followingFocused) {
+				this._followingFocused = true;
+				heading.focus({ preventScroll: true });
+			}
 		},
 
 		// A choice made far down the starting screen (a followed site)
@@ -11619,6 +11675,7 @@
 			if (start && start.isConnected && !start.hidden) {
 				this.renderStart();
 			}
+			this.showFollowingList();
 		},
 
 		// Fetch active subscriptions once per visit, purely to populate the
@@ -11628,6 +11685,7 @@
 			this._subscriptions = await fetchSubscriptions();
 			this._subscriptionsLoaded = true;
 			this.renderFollowing();
+			this.showFollowingList();
 			const select = root.querySelector('[data-source-filter]');
 			if (select && select.isConnected) {
 				select.innerHTML = sourceOptionsMarkup(this._subscriptions);
@@ -12116,8 +12174,6 @@
 		'<circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>';
 	const CONNECTION_PEOPLE_GLYPH =
 		'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>';
-	const CONNECTION_BELL_GLYPH =
-		'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path>';
 
 	function connectionGlyph(glyph) {
 		return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${glyph}</svg>`;
@@ -12154,7 +12210,6 @@
 		const following = data.following || {};
 		const count = Number(following.count) || 0;
 		const failing = Number(following.failing) || 0;
-		const unread = Number(data.notifications && data.notifications.unread) || 0;
 
 		rows.push({
 			key: 'site',
@@ -12211,24 +12266,10 @@
 				: '',
 			alert: true,
 			// The failing ones, in WordPress, while there are any (and you
-			// can open that screen); otherwise the Following list.
+			// can open that screen); otherwise the Following list on
+			// Explore (see exploreFocus).
 			href: following.url || '#explore',
 			external: !!following.url,
-		});
-
-		rows.push({
-			key: 'notifications',
-			icon: connectionGlyph(CONNECTION_BELL_GLYPH),
-			name: __('Notifications', 'daymark'),
-			detail: __('Replies, likes and mentions', 'daymark'),
-			status: unread
-				? sprintf(
-						/* translators: %s: number of unread notifications */
-						_n('%s new', '%s new', unread, 'daymark'),
-						unread
-				  )
-				: '',
-			href: '#notifications',
 		});
 
 		return rows.map(connectionRow).join('');
@@ -12364,6 +12405,18 @@
 		},
 
 		bindEvents() {
+			// The Following row leads to Explore's Following list, which
+			// sits below the other sections there. The row is drawn when
+			// GET /connections answers, so listen on the card.
+			const connections = root.querySelector('[data-me-connections]');
+			if (connections) {
+				connections.addEventListener('click', (event) => {
+					if (event.target.closest('[data-conn="following"][href="#explore"]')) {
+						exploreFocus = 'following';
+					}
+				});
+			}
+
 			const myMarks = root.querySelector('[data-me-mymarks]');
 			if (myMarks) {
 				myMarks.addEventListener('click', () => {

@@ -6201,11 +6201,39 @@ test('Me shows the newest drafts above the calendar, with the rest behind Show m
 	}, draftIds);
 });
 
-// Me's Connections card (issue #295): your site, where Marks are shared,
-// the sites you follow, and Notifications, between Your days and the
-// links. Each row leads to where that thing is handled.
-test('Me lists your connections: your site, the sites you follow, and Notifications', async ({ page }) => {
+// Me's Connections card (issue #295): your site, where Marks are shared
+// and the sites you follow, between Your days and the links. Each row
+// leads to where that thing is handled. Notifications has no row here: its
+// tab sits in the bottom bar of this same screen. The Following row opens
+// Explore with the Following list at the top, since that list sits below
+// Explore's other sections.
+test('Me lists your connections: your site and the sites you follow, and Following opens the Following list', async ({
+	page,
+}) => {
 	await loginAs(page);
+	// Enough followed sites that Explore is taller than the screen and its
+	// Following list starts below the fold, with none of them failing (a
+	// failing one would send the row to Settings instead).
+	const sites = Array.from({ length: 16 }, (unused, index) => ({
+		id: 990100 + index,
+		site_title: `Followed Example ${String(index + 1).padStart(2, '0')}`,
+		site_url: `https://followed-${index + 1}.example/`,
+		site_icon_url: '',
+		favorite: false,
+	}));
+	await page.route(/\/daymark\/v1\/subscriptions(\?|$)/, async (route) => {
+		if ('GET' !== route.request().method()) {
+			await route.continue();
+			return;
+		}
+		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sites) });
+	});
+	await page.route(/\/daymark\/v1\/connections(\?|$)/, async (route) => {
+		const response = await route.fetch();
+		const body = await response.json();
+		body.following = { count: sites.length, failing: 0, url: '' };
+		await route.fulfill({ response, body: JSON.stringify(body) });
+	});
 	await page.goto('/daymark/me');
 
 	const list = page.locator('[data-me-connlist]');
@@ -6222,6 +6250,7 @@ test('Me lists your connections: your site, the sites you follow, and Notificati
 		});
 		return res.json();
 	});
+	expect(Object.keys(answer)).toEqual(['site', 'sharing', 'sharing_url', 'following']);
 	await expect(site).toHaveAttribute('href', answer.site.url);
 	await expect(site.locator('.daymark-meconn__detail')).toHaveText(answer.site.address);
 	await expect(list.locator('[data-conn^="helper-"], [data-conn^="connector-"], [data-conn="activitypub"]')).toHaveCount(
@@ -6229,10 +6258,12 @@ test('Me lists your connections: your site, the sites you follow, and Notificati
 	);
 
 	const following = list.locator('[data-conn="following"]');
-	await expect(following.locator('.daymark-meconn__detail')).toHaveText(
-		answer.following.count ? new RegExp(`^${answer.following.count} sites?$`) : 'No sites yet'
-	);
-	await expect(following).toHaveAttribute('href', answer.following.url || '#explore');
+	await expect(following.locator('.daymark-meconn__detail')).toHaveText(`${sites.length} sites`);
+	await expect(following).toHaveAttribute('href', '#explore');
+
+	// Following is the card's last row: Notifications has none.
+	await expect(list.locator('[data-conn="notifications"]')).toHaveCount(0);
+	await expect(list.locator('[data-conn]').last()).toHaveAttribute('data-conn', 'following');
 
 	// Below Your days, above the links.
 	const daysBox = await page.locator('[data-me-days]').boundingBox();
@@ -6241,9 +6272,37 @@ test('Me lists your connections: your site, the sites you follow, and Notificati
 	expect(cardBox.y).toBeGreaterThan(daysBox.y);
 	expect(cardBox.y).toBeLessThan(linksBox.y);
 
-	// The Notifications row opens Notifications.
-	await list.locator('[data-conn="notifications"]').click();
-	await expect(page).toHaveURL(/#notifications$/);
+	// The Following row opens Explore at rest, scrolled so the Following
+	// list's heading sits just under the header, and focused for a screen
+	// reader.
+	await following.click();
+	await expect(page).toHaveURL(/#explore$/);
+	const heading = page.locator('#daymark-explore-following-heading');
+	await expect(page.locator('[data-explore-subscription]')).toHaveCount(sites.length);
+	await expect(page.locator('[data-search-start]')).toBeVisible();
+	await expect(heading).toBeFocused();
+	await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+	await expect
+		.poll(() =>
+			page.evaluate(() =>
+				Math.round(document.getElementById('daymark-explore-following-heading').getBoundingClientRect().top)
+			)
+		)
+		.toBeLessThan(200);
+	await expect(heading).toBeInViewport();
+
+	// Only that tap does it: opening Explore any other way starts at the
+	// top, on the search box.
+	await page.evaluate(() => {
+		window.location.hash = '#me';
+	});
+	await expect(page.locator('[data-me-connlist] [data-conn="following"]')).toBeVisible();
+	await page.evaluate(() => {
+		window.location.hash = '#explore';
+	});
+	await expect(page.locator('[data-explore-subscription]')).toHaveCount(sites.length);
+	await expect(heading).not.toBeFocused();
+	expect(await page.evaluate(() => window.scrollY)).toBe(0);
 });
 
 // The launcher: tapping "+ New Mark" fans out 4 labeled, accessible bubbles

@@ -1,12 +1,12 @@
 <?php
 /**
- * The Me screen's Connections card: where this site's Marks go, the sites
- * it follows, and what is new, at a glance (issue #295).
+ * The Me screen's Connections card: where this site's Marks go and the
+ * sites it follows, at a glance (issue #295).
  *
  * Everything here is read from what Daymark already knows: the site's own
  * address, the sharing connectors and plugins the composer's "Where this
- * goes" sheet lists, the followed-sites table, and the Notifications
- * list. Nothing is written and no outbound request is made.
+ * goes" sheet lists, and the followed-sites table. Nothing is written and
+ * no outbound request is made.
  *
  * @package Daymark
  */
@@ -47,8 +47,7 @@ class Daymark_Connections {
 	 *     site: array{address: string, url: string},
 	 *     sharing: array<int, array{id: string, name: string, network: string, detail: string}>,
 	 *     sharing_url: string,
-	 *     following: array{count: int, failing: int, url: string},
-	 *     notifications: array{unread: int}
+	 *     following: array{count: int, failing: int, url: string}
 	 * }
 	 */
 	public static function summary(): array {
@@ -56,21 +55,18 @@ class Daymark_Connections {
 		$counts     = Daymark_Plugin::instance()->subscriptions->counts();
 
 		return array(
-			'site'          => array(
+			'site'        => array(
 				'address' => self::site_address(),
 				'url'     => esc_url_raw( home_url( '/' ) ),
 			),
-			'sharing'       => self::sharing(),
-			'sharing_url'   => $can_manage ? esc_url_raw( Daymark_Admin_Subscriptions::tab_url( 'connectors' ) ) : '',
-			'following'     => array(
+			'sharing'     => self::sharing(),
+			'sharing_url' => $can_manage ? esc_url_raw( Daymark_Admin_Subscriptions::tab_url( 'connectors' ) ) : '',
+			'following'   => array(
 				'count'   => $counts['total'],
 				'failing' => $counts['failing'],
 				'url'     => $can_manage && $counts['failing'] > 0
 					? esc_url_raw( add_query_arg( 'view', 'failing', Daymark_Admin_Subscriptions::tab_url( 'subscriptions' ) ) )
 					: '',
-			),
-			'notifications' => array(
-				'unread' => Daymark_Plugin::instance()->notifications->unread_count(),
 			),
 		);
 	}
