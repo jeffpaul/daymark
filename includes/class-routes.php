@@ -1031,12 +1031,7 @@ class Daymark_Routes {
 	private static function federation_reach(): array {
 		$reach = array();
 
-		if ( Daymark_Plugin_Detector::matches(
-			array(
-				'slugs'     => array( 'activitypub' ),
-				'constants' => array( 'ACTIVITYPUB_PLUGIN_VERSION' ),
-			)
-		) ) {
+		if ( Daymark_Connections::activitypub_active() ) {
 			$reach[] = array(
 				'label'  => __( 'your fediverse followers', 'daymark' ),
 				'helper' => '',
