@@ -5,7 +5,11 @@ name: Release
 # plugin-check.yml's dist build) and attaches it to a GitHub release —
 # creating the release, or uploading to it if one was already drafted by
 # hand for the tag. The zip is the artifact to install for testing and the
-# exact tree that would be committed to the wordpress.org SVN trunk.
+# same tree the `deploy` job then commits to the wordpress.org SVN trunk.
+#
+# Once the release is published, the `deploy` job sends the same tag to the
+# wordpress.org plugin directory (wporg-plugin-deploy.yml). It runs only
+# after every guard below has passed.
 #
 # Guard: the tag must match the plugin's declared version everywhere —
 # daymark.php header, DAYMARK_VERSION, readme.txt Stable tag, package.json, and
@@ -156,3 +160,22 @@ jobs:
               --title "${GITHUB_REF_NAME#v}" \
               --generate-notes
           fi
+
+  # Sends the tag to the wordpress.org plugin directory once the release
+  # above is published. This is a job here, not a workflow that starts on
+  # `release: published`, because the release is created with this
+  # workflow's own token and GitHub starts no other workflow from that. See
+  # wporg-plugin-deploy.yml for the details and the two secrets it needs.
+  #
+  # If this job fails (a missing or wrong secret, wordpress.org being down),
+  # fix the cause and use "Re-run failed jobs" on this run: the release is
+  # already published and is left alone.
+  deploy:
+    name: Deploy to wordpress.org
+    needs: release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/wporg-plugin-deploy.yml
+    secrets:
+      SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+      SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
