@@ -5402,6 +5402,119 @@ a.daymark-meconn__row:focus-visible .daymark-melink__external {
 	color: var(--daymark-text-secondary);
 }
 
+/* Sites you might follow: a short list of rows, each a site from your
+   own circle with why it is there, Follow, and Not now. */
+.daymark-suggest__note {
+	margin: 0;
+	color: var(--daymark-text-secondary);
+	font-size: 14px;
+	line-height: 1.4;
+}
+
+.daymark-suggest {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-sm);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.daymark-suggest__item {
+	display: flex;
+	align-items: center;
+	gap: var(--daymark-spacing-md);
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-bg);
+}
+
+.daymark-suggest__avatar {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	inline-size: 44px;
+	block-size: 44px;
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-accent-wash);
+	color: var(--daymark-accent-deep);
+	font-size: 20px;
+	font-weight: 700;
+}
+
+.daymark-suggest__who {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-inline-size: 0;
+}
+
+.daymark-suggest__name {
+	display: -webkit-box;
+	overflow: hidden;
+	font-weight: 600;
+	line-height: 1.3;
+	overflow-wrap: anywhere;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	line-clamp: 2;
+}
+
+.daymark-suggest__host {
+	overflow: hidden;
+	color: var(--daymark-text-secondary);
+	font-size: 13px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.daymark-suggest__why {
+	display: flex;
+	flex-direction: column;
+	color: var(--daymark-text-secondary);
+	font-size: 14px;
+	line-height: 1.35;
+}
+
+.daymark-suggest__actions {
+	flex: 0 0 auto;
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+}
+
+.daymark-suggest__follow {
+	min-height: var(--daymark-tap-min);
+	padding-block: 0;
+	padding-inline: var(--daymark-spacing-md);
+	border-color: var(--daymark-accent);
+	border-radius: 999px;
+	background: var(--daymark-bg);
+	color: var(--daymark-accent);
+	font-size: 15px;
+}
+
+.daymark-suggest__follow:hover,
+.daymark-suggest__follow:active {
+	background: var(--daymark-accent-wash);
+}
+
+.daymark-suggest__dismiss {
+	padding-block: 0;
+	padding-inline: var(--daymark-spacing-md);
+	font-size: 14px;
+	text-decoration: none;
+}
+
+.daymark-suggest__follow:focus-visible,
+.daymark-suggest__dismiss:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+}
+
 .daymark-searchstart__section {
 	display: flex;
 	flex-direction: column;

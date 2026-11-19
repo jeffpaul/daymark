@@ -30,6 +30,8 @@ can't act on them.
 - The Me screen has a new Connections card: your site, each place your Marks are also shared, and how many sites you follow (with a flag when one can't be reached). Tapping a row opens the place to act on it. Following opens a page of every site you follow, with the favorite stars and Follow a site, and a Back button to Me. Builds on the Connections tab yusuf-saif proposed in [#432](https://github.com/jeffpaul/daymark/pull/432). ([#617](https://github.com/jeffpaul/daymark/pull/617), [#618](https://github.com/jeffpaul/daymark/pull/618))
 - On Explore, the People row now rings anyone whose posts have arrived since you last opened Explore, so you can see who is new at a glance. A new "See all" link beside it opens the full list of sites you follow. ([#619](https://github.com/jeffpaul/daymark/pull/619))
 
+- Explore has a new section, "Sites you might follow": a short list of sites you don't follow yet, taken only from people already around your site. Each one says why it is there (it follows you, or its owner replied to or liked your Marks), Follow opens Follow a site with the address filled in, and "Not now" hides it for good. Nothing is ranked and nothing leaves your site. ([#622](https://github.com/jeffpaul/daymark/pull/622))
+
 ### Changed
 
 - Explore and Search are now one tab. Search sits at the top with a Bookmarks button beside it, and under it are your recent searches, the people you follow (whoever posted last comes first), your most-used tags and On this day. The tab's icon is a magnifying glass with the compass needle inside. ([#615](https://github.com/jeffpaul/daymark/pull/615), [#618](https://github.com/jeffpaul/daymark/pull/618))
