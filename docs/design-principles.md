@@ -48,7 +48,8 @@ behind — Marks are published, portable WordPress posts, not encrypted diary
 entries. What's worth borrowing is the *sense of accumulating personal
 history over time*, not the privacy model. Today this shows up as
 Timeline's cross-source search (Subscriptions & Timeline Following,
-CLAUDE.md's architectural-decisions table), Explore's "On this day", and
+CLAUDE.md's architectural-decisions table), Explore's "Look back" strip
+(your own posts from about this time in earlier years and months), and
 calendar navigation on the Me screen ("Your days", a month of the days you
 published on — a count per month, never a streak, and nothing marks a day
 without a Mark as missed). Richer rediscovery and more automatic metadata

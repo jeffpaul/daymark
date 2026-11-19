@@ -3618,26 +3618,29 @@ test('search: on the Explore tab, a query + type filter narrow the results', asy
 });
 
 // Explore and Search are one tab (issue #269): search on top with the
-// Bookmarks button beside it, and under its starting screen On this day.
+// Bookmarks button beside it, and under its starting screen Look back.
 // Bookmarks and a followed site search in place instead of leaving for
 // another screen. The sites you follow are the People row, whoever posted
 // last first; the full list of them is a page under Me, not a second list
 // down here. The followed sites are canned, so the test needs no real
-// feed, and "On this day" is handed a Mark from today, since a test site
+// feed, and "Look back" is handed a Mark from today, since a test site
 // has none from earlier years.
-test('explore: search on top with Bookmarks beside it, People by latest post, On this day below', async ({ page }) => {
+test('explore: search on top with Bookmarks beside it, People by latest post, Look back below', async ({ page }) => {
 	const memory = `E2E memory ${RUN_ID}`;
 
 	await loginAs(page);
 	// Both routes go on before the app first loads: one added after its
 	// service worker controls the page can miss requests.
-	await page.route(/\/daymark\/v1\/timeline\?.*on_this_day=1/, async (route) => {
-		const url = new URL(route.request().url());
-		url.searchParams.delete('on_this_day');
+	await page.route(/\/daymark\/v1\/look-back(\?|$)/, async (route) => {
+		const url = new URL(route.request().url().replace('/look-back', '/timeline'));
 		url.searchParams.set('s', memory);
 		url.searchParams.set('per_page', '1');
 		const response = await route.fetch({ url: url.toString() });
-		await route.fulfill({ response });
+		const marks = await response.json();
+		await route.fulfill({
+			response,
+			json: marks.map((mark) => ({ ...mark, look_back: { kind: 'years', amount: 2, year: 2024 } })),
+		});
 	});
 	await page.route(/\/daymark\/v1\/subscriptions(\?|$)/, async (route) => {
 		if ('GET' !== route.request().method()) {
@@ -3713,8 +3716,9 @@ test('explore: search on top with Bookmarks beside it, People by latest post, On
 	expect(Math.abs(bookmarksBox.y - inputBox.y)).toBeLessThanOrEqual(2);
 	expect(bookmarksBox.width).toBeGreaterThanOrEqual(44);
 	expect(bookmarksBox.height).toBeGreaterThanOrEqual(44);
-	const memories = sections.locator('[data-explore-memories]');
+	const memories = sections.locator('[data-explore-lookback]');
 	await expect(memories.getByText(memory).first()).toBeVisible();
+	await expect(memories.locator('.daymark-lookback__when')).toHaveText('2 years ago today');
 	const order = await page.evaluate(() => {
 		const top = (selector) => document.querySelector(selector).getBoundingClientRect().top;
 		return [top('[data-search-input]'), top('[data-search-start]'), top('[data-explore-sections]')];
@@ -3776,13 +3780,13 @@ test('explore: search on top with Bookmarks beside it, People by latest post, On
 	await input.fill('');
 	await expect(sections).toBeVisible();
 
-	// An "On this day" card opens the post, and Back returns to Explore
-	// with the card still there.
-	await memories.locator('.daymark-recent__title').first().click();
+	// A "Look back" tile opens the post, and Back returns to Explore
+	// with the tile still there.
+	await memories.locator('[data-expand-post]').first().click();
 	await expect(page).toHaveURL(/#post$/);
 	await page.locator('a.daymark-backlink--icon').click();
 	await expect(page).toHaveURL(/#explore$/);
-	await expect(page.locator('[data-explore-memories]').getByText(memory).first()).toBeVisible();
+	await expect(page.locator('[data-explore-lookback]').getByText(memory).first()).toBeVisible();
 });
 
 // Notifications is a tab in the bottom bar, where Search used to be (issue
@@ -6053,7 +6057,7 @@ test('+New launcher works from Explore, Notifications, and Me, not just Timeline
 			/is-active/
 		);
 		await expect(page.locator('[data-action="new-mark"]')).not.toHaveClass(/is-active/);
-		// Explore's People row and On this day, and Notifications'
+		// Explore's People row and Look back, and Notifications'
 		// list, each render a `.daymark-skeleton` placeholder
 		// synchronously, then replace it once their async fetch
 		// resolves — real content of a different size than the
@@ -6206,6 +6210,66 @@ function calendarMonth(page, month = '') {
 		return res.json();
 	}, month);
 }
+
+// Explore's "Look back" strip (issue #294): small tiles for the site's own
+// posts from about this time in earlier years and months. A post dated a
+// year ago today, made through WordPress's own REST API (the composer
+// can't backdate), gets a tile that says so, opens the post, and is still
+// there after Back.
+test('explore: Look back shows a post from a year ago, opens it, and Back returns to it', async ({ page }) => {
+	const title = `E2E look back ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark/explore');
+
+	// The site's own "today", then the same date a year earlier. A Feb 29
+	// has no such date, so Feb 28 stands in (its tile says "This week").
+	const { today } = await calendarMonth(page);
+	const [year, month, day] = today.split('-').map(Number);
+	const leapDay = 2 === month && 29 === day;
+	const yearAgo = `${year - 1}-${String(month).padStart(2, '0')}-${String(leapDay ? 28 : day).padStart(2, '0')}`;
+	await page.evaluate(
+		async ({ postTitle, date }) => {
+			const config = window.daymarkApp;
+			await fetch(`${config.restUrl.replace('daymark/v1/', 'wp/v2/')}posts`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+				body: JSON.stringify({ title: postTitle, content: 'Written a year ago.', status: 'publish', date }),
+			});
+		},
+		{ postTitle: title, date: `${yearAgo}T12:00:00` }
+	);
+
+	await page.goto('/daymark/explore');
+	const strip = page.locator('[data-explore-lookback]');
+	await expect(page.locator('#daymark-explore-lookback-heading')).toHaveText('Look back');
+	const tile = strip.locator('[data-expand-post]').filter({ hasText: title });
+	await expect(tile).toBeVisible();
+	await expect(tile.locator('.daymark-lookback__when')).toHaveText(
+		leapDay ? `This week in ${year - 1}` : '1 year ago today'
+	);
+	// The tile is a small one, not a full-width card.
+	const box = await tile.boundingBox();
+	expect(box.width).toBeLessThan(page.viewportSize().width / 2);
+	expect(box.height).toBeGreaterThanOrEqual(44);
+	// Explore's old full-size "On this day" cards are gone.
+	await expect(page.locator('[data-explore-memories]')).toHaveCount(0);
+
+	// The strip belongs to the starting screen: a search puts it away.
+	await page.locator('[data-search-input]').fill(`nothing-matches-${RUN_ID}`);
+	await expect(strip).toBeHidden();
+	await page.locator('[data-search-input]').fill('');
+	await expect(tile).toBeVisible();
+
+	// A tile opens the post; Back returns to Explore with the tile in place.
+	await tile.click();
+	await expect(page).toHaveURL(/#post$/);
+	await expect(page.locator('[data-postview-body] .daymark-expand-content')).toContainText('Written a year ago.');
+	await page.locator('a.daymark-backlink--icon').click();
+	await expect(page).toHaveURL(/#explore$/);
+	await expect(page.locator('[data-explore-lookback] [data-expand-post]').filter({ hasText: title })).toBeVisible();
+});
 
 test('Me calendar: today lists the Mark you just published, and Back returns to that day', async ({ page }) => {
 	const caption = `E2E calendar ${RUN_ID}`;

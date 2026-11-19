@@ -347,6 +347,19 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			)
 		);
 
+		// Explore's "Look back" strip (issue #294): a few of the site's own
+		// posts from about this time in earlier years and months. A local
+		// read, like the calendar's, so no rate limit.
+		register_rest_route(
+			$this->namespace,
+			'/look-back',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_look_back' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+			)
+		);
+
 		// The Me screen's Connections card (issue #295): where Marks go,
 		// the sites followed, and what is new. A local read, no rate
 		// limit — see Daymark_Connections.
@@ -2539,6 +2552,35 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		foreach ( Daymark_Calendar::day_post_ids( (string) $request->get_param( 'day' ) ) as $post_id ) {
 			$items[] = array( 'item_type' => 'mark' ) + $this->prepare_mark_summary( $post_id );
+		}
+
+		return rest_ensure_response( $items );
+	}
+
+	/**
+	 * GET /daymark/v1/look-back — Explore's "Look back" strip: the site's
+	 * own posts from today's date in earlier years, or from within a few
+	 * days of it, plus one from about six months ago and one from about a
+	 * month ago (see Daymark_Look_Back::tiles()). Each is in GET /timeline's
+	 * Mark shape, so it opens like any other card, plus `look_back`: why it
+	 * is there (`kind`: years, week, or months; `amount`; `year`).
+	 *
+	 * @param WP_REST_Request $request The request (no params).
+	 * @return WP_REST_Response
+	 */
+	public function get_look_back( WP_REST_Request $request ) {
+		unset( $request );
+
+		$items = array();
+
+		foreach ( Daymark_Look_Back::tiles() as $tile ) {
+			$items[] = array( 'item_type' => 'mark' ) + $this->prepare_mark_summary( $tile['post_id'] ) + array(
+				'look_back' => array(
+					'kind'   => $tile['kind'],
+					'amount' => $tile['amount'],
+					'year'   => $tile['year'],
+				),
+			);
 		}
 
 		return rest_ensure_response( $items );

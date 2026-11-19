@@ -10531,11 +10531,85 @@
 	// rendering and item interactions with Home via the functions above.
 	// With nothing typed and no filter chosen the screen is at rest, and
 	// shows what there is to explore, never a second Timeline: recent
-	// searches, the people you follow, your tags, Bookmarks, "On this day"
-	// (issue #294; real feed cards through the same shared pipeline as the
-	// results) and Following, where a site is starred or followed.
+	// searches, the people you follow, your tags, Bookmarks, and "Look
+	// back" (issue #294; a strip of small tiles for this site's own posts
+	// from about this time in earlier years and months).
 	// Choosing any of them searches in place. Explore and Search were two
 	// tabs until issue #269's S5; "#search" still opens this screen.
+
+	// --- Explore: the "Look back" strip (issue #294) ---
+
+	// Why a post is on the strip, from what GET /look-back says about it:
+	// "1 year ago today", "This week in 2023", "6 months ago".
+	function lookBackWhen(reason) {
+		const amount = Number(reason && reason.amount) || 0;
+		if (!reason || amount < 1) {
+			return '';
+		}
+		if ('years' === reason.kind) {
+			return sprintf(
+				/* translators: %d: number of years. The post was published on today's date that many years ago. Keep it short. */
+				_n('%d year ago today', '%d years ago today', amount, 'daymark'),
+				amount
+			);
+		}
+		if ('week' === reason.kind) {
+			return sprintf(
+				/* translators: %s: a four-digit year, e.g. 2023. The post was published within a few days of today's date in that year. Keep it short. */
+				__('This week in %s', 'daymark'),
+				String(reason.year)
+			);
+		}
+		if ('months' === reason.kind) {
+			return sprintf(
+				/* translators: %d: number of months. The post was published about that many months ago. Keep it short. */
+				_n('%d month ago', '%d months ago', amount, 'daymark'),
+				amount
+			);
+		}
+		return '';
+	}
+
+	// A post's day as the site's own calendar has it. The strip is about
+	// calendar days, so the date isn't shifted into the phone's time zone
+	// (a late-evening post would otherwise show the day after).
+	function lookBackDate(value) {
+		const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+		if (!match) {
+			return '';
+		}
+		return formatAbsoluteDate(new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+	}
+
+	// One small tile: the post's picture, or its words when it has none,
+	// with why it is here and its date along the bottom. The whole tile is
+	// one button that opens the post.
+	function renderLookBackTile(item) {
+		const text = markCardText(item).title;
+		const picture = item.thumbnail
+			? `<img class="daymark-lookback__img" src="${esc(item.thumbnail)}" alt="" loading="lazy" decoding="async" />
+				<span class="daymark-lookback__shade" aria-hidden="true"></span>
+				<span class="daymark-visually-hidden">${esc(text)}</span>`
+			: `<span class="daymark-lookback__text">${esc(text)}</span>`;
+
+		return `<button type="button" class="daymark-lookback__tile${
+			item.thumbnail ? '' : ' daymark-lookback__tile--text'
+		}" data-expand-post="${esc(String(item.id))}">
+				${picture}
+				<span class="daymark-lookback__label">
+					<span class="daymark-lookback__when">${esc(lookBackWhen(item.look_back))}</span>
+					<span class="daymark-lookback__date">${esc(lookBackDate(item.date))}</span>
+				</span>
+			</button>`;
+	}
+
+	function lookBackSkeleton(count) {
+		let out = '';
+		for (let i = 0; i < count; i++) {
+			out += '<span class="daymark-lookback__tile daymark-skeleton" aria-hidden="true"></span>';
+		}
+		return out;
+	}
 
 	// --- Search: starting screen and shortcuts (issue #269) ---
 
@@ -10745,12 +10819,12 @@
 				</p>
 				<div class="daymark-searchstart" data-search-start hidden></div>
 				<div class="daymark-exploresections" data-explore-sections hidden>
-					<section class="daymark-recent" aria-labelledby="daymark-explore-memories-heading">
-						<h2 id="daymark-explore-memories-heading" class="daymark-section-heading">${esc(
-							__('On this day', 'daymark')
+					<section class="daymark-recent" aria-labelledby="daymark-explore-lookback-heading">
+						<h2 id="daymark-explore-lookback-heading" class="daymark-section-heading">${esc(
+							__('Look back', 'daymark')
 						)}</h2>
-						<div class="daymark-recent__list" data-explore-memories>
-							${skeletonRows(2)}
+						<div class="daymark-lookback" data-explore-lookback>
+							${lookBackSkeleton(3)}
 							<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 						</div>
 					</section>
@@ -10868,12 +10942,12 @@
 				});
 			}
 
-			// "On this day" renders real feed cards (renderFeedItem), so it
-			// gets the same delegated handler as the results list: card
-			// taps open the post view, and the stat-row toggles work.
-			const memories = root.querySelector('[data-explore-memories]');
-			if (memories) {
-				memories.addEventListener('click', (event) => onFeedListClick(this, event));
+			// A "Look back" tile carries the same data-expand-post a feed
+			// card does, so the results list's own delegated handler opens
+			// its post view and remembers where the tile sat for Back.
+			const lookBack = root.querySelector('[data-explore-lookback]');
+			if (lookBack) {
+				lookBack.addEventListener('click', (event) => onFeedListClick(this, event));
 			}
 
 			const more = root.querySelector('[data-search-more]');
@@ -10913,16 +10987,16 @@
 			this.searchPlace = '';
 			// The most-used tags and the followed sites are kept from the
 			// last visit and shown at once, then refreshed. Coming back
-			// from an "On this day" card, the sections above it are then
-			// already their full height, so the card doesn't move.
+			// from a "Look back" tile, the sections above it are then
+			// already their full height, so the strip doesn't move.
 			this._topTags = this._topTags || null;
 			this._subscriptions = this._subscriptions || [];
 			this._suggestions = null;
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
-			// The cards currently shown: the results, or at rest the "On
-			// this day" cards (kept in _memories). What saveFeedSnapshot()
-			// captures when a card opens.
+			// The cards currently shown: the results, or at rest the "Look
+			// back" tiles' posts (kept in _memories). What
+			// saveFeedSnapshot() captures when one opens.
 			this._items = [];
 			this._memories = [];
 
@@ -10982,7 +11056,7 @@
 			this.loadTopTags();
 			if (snapshot && !this.isIdle()) {
 				// Back from a result: the same results, without asking
-				// again. "On this day" loads behind them, for when the
+				// again. "Look back" loads behind them, for when the
 				// search is cleared.
 				this.showStart(false);
 				this.fitFilters();
@@ -10991,13 +11065,20 @@
 				return;
 			}
 			if (snapshot) {
-				// Back from an "On this day" card: the same cards, and the
+				// Back from a "Look back" tile: the same tiles, and the
 				// opened one back in its place instead of the top.
 				this.showMemories(snapshot.items.slice());
 				await this.runSearch();
 				// showScreen() focuses the header right after init()
-				// starts, which scrolls to the top. Position the card after.
-				requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
+				// starts, which scrolls to the top. Position the tile
+				// after: along the strip first, then down the page.
+				requestAnimationFrame(() => {
+					const tile = root.querySelector('[data-explore-lookback] ' + snapshot.anchorSelector);
+					if (tile) {
+						tile.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+					}
+					scrollFeedToAnchor(snapshot, true);
+				});
 				return;
 			}
 			// Deliberately kicked off and left running, not awaited: the
@@ -11007,19 +11088,19 @@
 			await this.runSearch();
 		},
 
-		// Fills "On this day" with these cards, or takes the section away
-		// when there are none. At rest they are the screen's cards, so a
-		// tap can hand openPostView() its item.
+		// Fills "Look back" with a tile per post, or takes the section
+		// away when there are none. At rest they are the screen's cards, so
+		// a tap can hand openPostView() its item.
 		showMemories(items) {
 			this._memories = Array.isArray(items) ? items : [];
-			const list = root.querySelector('[data-explore-memories]');
+			const list = root.querySelector('[data-explore-lookback]');
 			if (!list || !list.isConnected) {
 				return;
 			}
 			if (!this._memories.length) {
 				list.closest('section').remove();
 			} else {
-				list.innerHTML = this._memories.map((item) => renderFeedItem(item)).join('');
+				list.innerHTML = this._memories.map((item) => renderLookBackTile(item)).join('');
 			}
 			if (this.isIdle()) {
 				this.useMemoriesAsItems();
@@ -11033,18 +11114,18 @@
 			this._items.forEach((item) => rememberItem(this, item));
 		},
 
-		// GET /timeline?on_this_day=1: the Marks published on today's
-		// calendar date in a prior year (issue #294). No group headers (the
-		// section has its own heading). A failed fetch shows an inline
+		// GET /look-back: this site's posts from about this time in
+		// earlier years, six months ago and one month ago (issue #294),
+		// each saying why it is there. A failed fetch shows an inline
 		// error in the section; nothing found removes it.
 		async loadMemories() {
-			const list = root.querySelector('[data-explore-memories]');
+			const list = root.querySelector('[data-explore-lookback]');
 			if (!list) {
 				return;
 			}
 			let items;
 			try {
-				items = await apiGet('timeline?on_this_day=1&per_page=50');
+				items = await apiGet('look-back');
 			} catch (err) {
 				if (list.isConnected) {
 					list.innerHTML =
@@ -11797,7 +11878,7 @@
 			if (this.isIdle()) {
 				teardownLikeAvailabilityObserver(this);
 				teardownFeaturedImages(this);
-				// At rest the "On this day" cards are the screen's cards.
+				// At rest the "Look back" posts are the screen's cards.
 				this.useMemoriesAsItems();
 				this._searchParams = '';
 				list.innerHTML = '';
@@ -16490,7 +16571,7 @@
 	// it had rendered (on Home, all infinite-scroll pages, in order), that
 	// screen's own state (Home's paging, Search's filters), and where the
 	// tapped card sat on screen. HomeScreen.init(), ExploreScreen.init()
-	// (its results, or at rest its "On this day" cards), and
+	// (its results, or at rest its "Look back" tiles), and
 	// MeScreen.init() (the day open under its calendar) consume it when
 	// `hash` matches. Kept in memory only: a reload or a
 	// cold start begins at the top as before. showScreen() discards it
@@ -16600,7 +16681,7 @@
 	// card after Back. When saveFeedSnapshot() just saved this screen,
 	// `items` is the snapshot's own array, so a page the post view loads
 	// is there too when Back re-renders the list. Home and Search page
-	// through GET /timeline; "On this day" has a single page, so no pager.
+	// through GET /timeline; "Look back" has a single page, so no pager.
 	function postViewList(screen) {
 		const items =
 			feedSnapshot && Array.isArray(feedSnapshot.items) ? feedSnapshot.items : (screen._items || []).slice();
