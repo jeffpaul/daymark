@@ -3737,7 +3737,8 @@ test('explore: search on top with Bookmarks beside it, People by latest post, Lo
 	// No second list of the same sites down the screen, and no Follow a
 	// site button: both are on Me's Following page.
 	await expect(page.locator('[data-explore-following]')).toHaveCount(0);
-	await expect(sections.locator('[data-follow-site]')).toHaveCount(0);
+	// (A suggested site's own Follow button is a different thing.)
+	await expect(sections.locator('[data-follow-site]:not(.daymark-suggest__follow)')).toHaveCount(0);
 	await expect(sections.getByRole('heading', { name: 'Following' })).toHaveCount(0);
 
 	// A followed site shows its posts right here: same tab, the Source
@@ -6269,6 +6270,106 @@ test('explore: Look back shows a post from a year ago, opens it, and Back return
 	await page.locator('a.daymark-backlink--icon').click();
 	await expect(page).toHaveURL(/#explore$/);
 	await expect(page.locator('[data-explore-lookback] [data-expand-post]').filter({ hasText: title })).toBeVisible();
+});
+
+// Explore's "Sites you might follow" (issue #621): someone from another
+// site who replied to a Mark is suggested with the reason, Follow opens
+// Follow a site with their address filled in, and "Not now" takes them
+// off the list for good.
+test('explore: Sites you might follow suggests someone who replied, offers Follow, and Not now hides them', async ({
+	page,
+}) => {
+	const caption = `E2E suggestion ${RUN_ID}`;
+	const host = `suggest-${RUN_ID}.example`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await publishNoteNow(page, caption);
+
+	// A reply from someone with no account here, carrying their site
+	// address, on the Mark just published. It goes through the site's
+	// ordinary comment form, signed out, and is then approved.
+	await page.evaluate(
+		async ({ search, url }) => {
+			const config = window.daymarkApp;
+			const wp = config.restUrl.replace('daymark/v1/', 'wp/v2/');
+			const headers = { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' };
+			const get = async (path) => (await fetch(`${wp}${path}`, { headers, credentials: 'same-origin' })).json();
+			const posts = await get(`posts?per_page=1&search=${encodeURIComponent(search)}`);
+			await fetch(new URL('/wp-comments-post.php', window.location.origin), {
+				method: 'POST',
+				credentials: 'omit',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				body: new URLSearchParams({
+					author: 'Leo Brandt',
+					email: 'leo@example.com',
+					url,
+					comment: `Nice one. ${search}`,
+					comment_post_ID: String(posts[0].id),
+				}),
+			});
+			const held = await get(`comments?post=${posts[0].id}&status=hold&per_page=10`);
+			for (const comment of Array.isArray(held) ? held : []) {
+				await fetch(`${wp}comments/${comment.id}`, {
+					method: 'POST',
+					headers,
+					credentials: 'same-origin',
+					body: JSON.stringify({ status: 'approved' }),
+				});
+			}
+			const approved = await get(`comments?post=${posts[0].id}&per_page=10`);
+			if (!Array.isArray(approved) || !approved.some((comment) => comment.author_url === url)) {
+				throw new Error('Could not add the reply.');
+			}
+		},
+		{ search: caption, url: `https://${host}/` }
+	);
+
+	await page.goto('/daymark/explore');
+	const section = page.locator('[data-explore-suggest-section]');
+	await expect(section.locator('.daymark-section-heading')).toHaveText('Sites you might follow');
+	const row = section.locator('[data-suggest-key]').filter({ hasText: host });
+	await expect(row).toBeVisible();
+	await expect(row.locator('.daymark-suggest__name')).toHaveText('Leo Brandt');
+	await expect(row.locator('.daymark-suggest__why')).toHaveText('Replied to 1 of your Marks');
+	// The list stays short.
+	expect(await section.locator('[data-suggest-key]').count()).toBeLessThanOrEqual(5);
+	// It comes after Look back, as the last thing on Explore.
+	const lookBack = page.locator('[data-explore-lookback]');
+	if ((await lookBack.count()) > 0) {
+		expect((await section.boundingBox()).y).toBeGreaterThan((await lookBack.boundingBox()).y);
+	}
+
+	// Both actions are full-size tap targets.
+	const follow = row.locator('[data-follow-site]');
+	const dismiss = row.locator('[data-suggest-dismiss]');
+	await expect(follow).toHaveAccessibleName('Follow Leo Brandt');
+	await expect(dismiss).toHaveAccessibleName('Not now: Leo Brandt');
+	for (const button of [follow, dismiss]) {
+		const box = await button.boundingBox();
+		expect(box.height).toBeGreaterThanOrEqual(44);
+		expect(box.width).toBeGreaterThanOrEqual(44);
+	}
+
+	// Follow opens Follow a site with the address already there.
+	await follow.click();
+	await expect(page.locator('#daymark-follow-title')).toBeVisible();
+	await expect(page.locator('[data-follow-url]')).toHaveValue(`https://${host}/`);
+	await page.keyboard.press('Escape');
+	await expect(page.locator('#daymark-follow-title')).toBeHidden();
+
+	// A search puts the section away, like the rest of the starting screen.
+	await page.locator('[data-search-input]').fill(`nothing-matches-${RUN_ID}`);
+	await expect(section).toBeHidden();
+	await page.locator('[data-search-input]').fill('');
+	await expect(row).toBeVisible();
+
+	// Not now removes the row, and it stays gone after a reload.
+	await dismiss.click();
+	await expect(row).toHaveCount(0);
+	await page.goto('/daymark/explore');
+	await expect(page.locator('[data-search-start]')).toBeVisible();
+	await expect(page.locator('[data-suggest-key]').filter({ hasText: host })).toHaveCount(0);
 });
 
 test('Me calendar: today lists the Mark you just published, and Back returns to that day', async ({ page }) => {

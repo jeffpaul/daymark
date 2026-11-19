@@ -70,6 +70,7 @@ delete_metadata( 'user', 0, 'daymark_notification_unread', '', true );
 delete_metadata( 'user', 0, 'daymark_notification_archived', '', true );
 delete_metadata( 'user', 0, 'daymark_bookmark', '', true );
 delete_metadata( 'user', 0, 'daymark_push_subscription', '', true );
+delete_metadata( 'user', 0, 'daymark_site_suggestions_dismissed', '', true );
 delete_metadata( 'user', 0, 'daymark_push_prefs', '', true );
 delete_metadata( 'comment', 0, '_daymark_push_sent', '', true );
 delete_metadata( 'user', 0, 'daymark_timeline_last_seen', '', true );

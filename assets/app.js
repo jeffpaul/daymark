@@ -10611,6 +10611,82 @@
 		return out;
 	}
 
+	// --- Explore: "Sites you might follow" (issue #621) ---
+
+	// Why a site is suggested, one phrase per reason GET
+	// /suggestions/sites gives: "Follows you", "Replied to 3 of your Marks".
+	function siteSuggestionReason(reason) {
+		const count = Number(reason && reason.count) || 0;
+		switch (reason && reason.kind) {
+			case 'follows_you':
+				return __('Follows you', 'daymark');
+			case 'replied':
+				return sprintf(
+					/* translators: %d: how many of your posts this person replied to. */
+					_n('Replied to %d of your Marks', 'Replied to %d of your Marks', count, 'daymark'),
+					count
+				);
+			case 'liked':
+				return sprintf(
+					/* translators: %d: how many of your posts this person liked. */
+					_n('Liked %d of your Marks', 'Liked %d of your Marks', count, 'daymark'),
+					count
+				);
+			case 'reblogged':
+				return sprintf(
+					/* translators: %d: how many of your posts this person reblogged. */
+					_n('Reblogged %d of your Marks', 'Reblogged %d of your Marks', count, 'daymark'),
+					count
+				);
+			case 'mentioned':
+				return sprintf(
+					/* translators: %d: how many of your posts this person's site mentioned. */
+					_n('Mentioned %d of your Marks', 'Mentioned %d of your Marks', count, 'daymark'),
+					count
+				);
+			default:
+				return '';
+		}
+	}
+
+	// One suggested site: who, their address, why, and the two things to
+	// do about it. Follow carries the address for the Follow a site sheet.
+	function renderSiteSuggestion(site) {
+		const name = String(site.name || site.host || '');
+		const reasons = (Array.isArray(site.reasons) ? site.reasons : [])
+			.map((reason) => siteSuggestionReason(reason))
+			.filter(Boolean)
+			.map((text) => `<span>${esc(text)}</span>`)
+			.join('');
+
+		return `<li class="daymark-suggest__item" data-suggest-key="${esc(String(site.key || ''))}">
+				${searchAvatar('', name, 'daymark-suggest__avatar')}
+				<div class="daymark-suggest__who">
+					<span class="daymark-suggest__name">${esc(name)}</span>
+					${site.host && site.host !== name ? `<span class="daymark-suggest__host">${esc(site.host)}</span>` : ''}
+					<span class="daymark-suggest__why">${reasons}</span>
+				</div>
+				<div class="daymark-suggest__actions">
+					<button type="button" class="daymark-btn daymark-suggest__follow" data-follow-site="${esc(
+						String(site.url || '')
+					)}" aria-label="${esc(
+						sprintf(
+							/* translators: %s: name or address of a site, such as example.com. */
+							__('Follow %s', 'daymark'),
+							name
+						)
+					)}">${esc(__('Follow', 'daymark'))}</button>
+					<button type="button" class="daymark-btn daymark-btn--text daymark-suggest__dismiss" data-suggest-dismiss aria-label="${esc(
+						sprintf(
+							/* translators: %s: the name of a person or site. "Not now" hides this suggestion. */
+							__('Not now: %s', 'daymark'),
+							name
+						)
+					)}">${esc(__('Not now', 'daymark'))}</button>
+				</div>
+			</li>`;
+	}
+
 	// --- Search: starting screen and shortcuts (issue #269) ---
 
 	// How many followed sites the starting screen's People row shows
@@ -10828,6 +10904,19 @@
 							<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 						</div>
 					</section>
+					${
+						config.canManageSubscriptions
+							? `<section class="daymark-recent" aria-labelledby="daymark-explore-suggest-heading" data-explore-suggest-section hidden>
+						<h2 id="daymark-explore-suggest-heading" class="daymark-section-heading" tabindex="-1">${esc(
+							__('Sites you might follow', 'daymark')
+						)}</h2>
+						<p class="daymark-suggest__note">${esc(
+							__('From people already around your site. Nothing here is ranked.', 'daymark')
+						)}</p>
+						<ul class="daymark-suggest" data-explore-suggest></ul>
+					</section>`
+							: ''
+					}
 				</div>
 				<div class="daymark-searchsuggest" data-search-suggest hidden></div>
 				<section class="daymark-recent" aria-labelledby="daymark-search-results-heading" data-search-results-section>
@@ -10950,6 +11039,18 @@
 				lookBack.addEventListener('click', (event) => onFeedListClick(this, event));
 			}
 
+			// "Sites you might follow": Follow is the app-wide
+			// [data-follow-site] button; "Not now" is handled here.
+			const siteSuggestions = root.querySelector('[data-explore-suggest]');
+			if (siteSuggestions) {
+				siteSuggestions.addEventListener('click', (event) => {
+					const dismiss = event.target.closest('[data-suggest-dismiss]');
+					if (dismiss) {
+						this.dismissSiteSuggestion(dismiss);
+					}
+				});
+			}
+
 			const more = root.querySelector('[data-search-more]');
 			if (more) {
 				more.addEventListener('click', (event) => {
@@ -11062,12 +11163,14 @@
 				this.fitFilters();
 				this.restoreSnapshot(snapshot);
 				this.loadMemories();
+				this.loadSiteSuggestions();
 				return;
 			}
 			if (snapshot) {
 				// Back from a "Look back" tile: the same tiles, and the
 				// opened one back in its place instead of the top.
 				this.showMemories(snapshot.items.slice());
+				this.loadSiteSuggestions();
 				await this.runSearch();
 				// showScreen() focuses the header right after init()
 				// starts, which scrolls to the top. Position the tile
@@ -11085,6 +11188,7 @@
 			// memories and everything else here load independently, and
 			// one failing never blocks another.
 			this.loadMemories();
+			this.loadSiteSuggestions();
 			await this.runSearch();
 		},
 
@@ -11139,6 +11243,71 @@
 				return;
 			}
 			this.showMemories(Array.isArray(items) ? items : []);
+		},
+
+		// GET /suggestions/sites: "Sites you might follow" (issue #621), for
+		// someone who can follow sites. A short list from the site's own
+		// circle, each with why it is there. The section stays hidden
+		// until there is something to show, and a failed fetch leaves it
+		// hidden: a suggestion is never worth an error message.
+		async loadSiteSuggestions() {
+			if (!root.querySelector('[data-explore-suggest]')) {
+				return;
+			}
+			let sites;
+			try {
+				sites = await apiGet('suggestions/sites');
+			} catch (err) {
+				return;
+			}
+			this.showSiteSuggestions(sites);
+		},
+
+		showSiteSuggestions(sites) {
+			const list = root.querySelector('[data-explore-suggest]');
+			if (!list || !list.isConnected) {
+				return;
+			}
+			const rows = Array.isArray(sites) ? sites : [];
+			list.innerHTML = rows.map((site) => renderSiteSuggestion(site)).join('');
+			list.closest('section').hidden = !rows.length;
+		},
+
+		// "Not now": the row goes at once and the site remembers it for
+		// this person (POST /suggestions/sites/{key}/dismiss), answering
+		// with the list as it now stands so the next site can step in.
+		// Focus moves to the row that took its place, or to the heading.
+		async dismissSiteSuggestion(button) {
+			const row = button.closest('[data-suggest-key]');
+			const list = root.querySelector('[data-explore-suggest]');
+			if (!row || !list || button.disabled) {
+				return;
+			}
+			button.disabled = true;
+			const index = Array.prototype.indexOf.call(list.children, row);
+			let sites;
+			try {
+				sites = await apiPost(
+					'suggestions/sites/' + encodeURIComponent(row.getAttribute('data-suggest-key')) + '/dismiss',
+					{}
+				);
+			} catch (err) {
+				button.disabled = false;
+				announce(__("Couldn't hide that suggestion. Try again in a moment.", 'daymark'));
+				return;
+			}
+			if (!list.isConnected) {
+				return;
+			}
+			this.showSiteSuggestions(sites);
+			const next = list.children[Math.min(index, list.children.length - 1)];
+			const target = next
+				? next.querySelector('[data-follow-site]')
+				: root.querySelector('[data-search-input]');
+			if (target) {
+				target.focus({ preventScroll: true });
+			}
+			announce(__('Suggestion hidden.', 'daymark'));
 		},
 
 		// Re-render the saved results rather than searching again, so the
@@ -22049,7 +22218,8 @@
 			return;
 		}
 		event.preventDefault();
-		FollowSiteSheet.show(trigger, reloadAfterFollowing);
+		// A suggestion's Follow button carries the site's address.
+		FollowSiteSheet.show(trigger, reloadAfterFollowing, trigger.getAttribute('data-follow-site') || '');
 	});
 
 	// A drop landing outside the composer's own picker zone (issue #260)

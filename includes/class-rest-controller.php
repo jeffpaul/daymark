@@ -360,6 +360,30 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			)
 		);
 
+		// Explore's "Sites you might follow" (issue #621): sites from the
+		// owner's own circle that aren't followed yet. Following a site
+		// needs manage_options, so seeing and trimming the list does too.
+		// Local reads and a per-user meta write, so no rate limit.
+		register_rest_route(
+			$this->namespace,
+			'/suggestions/sites',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_site_suggestions' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/suggestions/sites/(?P<key>[a-f0-9]{16})/dismiss',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'dismiss_site_suggestion' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
+			)
+		);
+
 		// The Me screen's Connections card (issue #295): where Marks go,
 		// the sites followed, and what is new. A local read, no rate
 		// limit — see Daymark_Connections.
@@ -2584,6 +2608,38 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		return rest_ensure_response( $items );
+	}
+
+	/**
+	 * GET /daymark/v1/suggestions/sites — Explore's "Sites you might
+	 * follow": up to Daymark_Site_Suggestions::MAX sites that follow this
+	 * one, or whose owner responded to a post here, and that aren't
+	 * followed yet. Each has `key`, `name`, `url`, `host` and `reasons`
+	 * (`kind` and `count`). See Daymark_Site_Suggestions::for_user().
+	 *
+	 * @param WP_REST_Request $request The request (no params).
+	 * @return WP_REST_Response
+	 */
+	public function get_site_suggestions( WP_REST_Request $request ) {
+		unset( $request );
+
+		return rest_ensure_response( Daymark_Site_Suggestions::for_user( get_current_user_id() ) );
+	}
+
+	/**
+	 * POST /daymark/v1/suggestions/sites/{key}/dismiss — "Not now": take
+	 * one site off the current user's list for good. Answers with the list
+	 * as it now stands, so the next site can take its place.
+	 *
+	 * @param WP_REST_Request $request The request (`key` from the route).
+	 * @return WP_REST_Response
+	 */
+	public function dismiss_site_suggestion( WP_REST_Request $request ) {
+		$user_id = get_current_user_id();
+
+		Daymark_Site_Suggestions::dismiss( $user_id, (string) $request['key'] );
+
+		return rest_ensure_response( Daymark_Site_Suggestions::for_user( $user_id ) );
 	}
 
 	/**

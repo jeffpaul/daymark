@@ -373,16 +373,17 @@ decision rows for the full technical record.
 
 **Still open from this era:**
 
-- [ ] Explore beyond "Browse by type"/"Following"/"Bookmarks"/"On this day" ([#294](https://github.com/jeffpaul/daymark/issues/294))
-  — Explore gained a third section, "Bookmarks" (a link into Search preset
-  to a reader's own saved items), as a side effect of the Bookmarks feature
-  shipping, and an "On this day" memories section (prior-year same-date
-  Marks) arrived with the Search-filters PR ([#413](https://github.com/jeffpaul/daymark/pull/413)),
-  later widened into the "Look back" strip
-  ([#620](https://github.com/jeffpaul/daymark/pull/620)) —
-  but highlights, collections, recently-popular, and suggested
-  accounts/content all still need their own supporting data before they can
-  be real sections.
+- [x] Explore beyond "Browse by type"/"Following"/"Bookmarks"/"On this day" ([#294](https://github.com/jeffpaul/daymark/issues/294))
+  — closed. Memories became the "Look back" strip
+  ([#620](https://github.com/jeffpaul/daymark/pull/620), building on
+  [#413](https://github.com/jeffpaul/daymark/pull/413)) and the calendar on
+  Me; collections are covered by tags ("Your tags" and the tag filter);
+  Favorites needs no concept of its own (a favorite post is a bookmark, a
+  favorite site is a starred site); and suggested accounts became "Sites
+  you might follow", from your own circle only
+  ([#621](https://github.com/jeffpaul/daymark/issues/621),
+  [#622](https://github.com/jeffpaul/daymark/pull/622)). Recently
+  popular, and suggestions from outside your circle, were decided against.
 - [x] Me beyond its current links ([#295](https://github.com/jeffpaul/daymark/issues/295))
   — all three directions are done: drafts are managed on Me itself (Edit,
   Publish, Delete); browsing your own Marks is "Your days", a month
@@ -875,10 +876,10 @@ that loop without new destinations or a new social network.
   person you follow is tracked on its own
   ([#614](https://github.com/jeffpaul/daymark/issues/614)).
   Me's three directions have since shipped too
-  ([#295](https://github.com/jeffpaul/daymark/issues/295)); the still-open
-  half of Explore ([#294](https://github.com/jeffpaul/daymark/issues/294))
-  still needs new supporting REST/data work before it can grow past its
-  current foundation.
+  ([#295](https://github.com/jeffpaul/daymark/issues/295)), and Explore's
+  open half ([#294](https://github.com/jeffpaul/daymark/issues/294)) is
+  closed: what is left of it is the later slice of "Sites you might follow"
+  ([#621](https://github.com/jeffpaul/daymark/issues/621)).
 - **Smaller ideas, tracked but unscheduled**: AI-written summaries for
   followed posts ([#224](https://github.com/jeffpaul/daymark/issues/224)), hiding Mark types from the +New launcher
   ([#398](https://github.com/jeffpaul/daymark/issues/398)), and seeing your followers with a follow-back option
