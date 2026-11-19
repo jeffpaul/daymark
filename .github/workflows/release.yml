@@ -78,6 +78,15 @@ jobs:
               exit 1
             fi
           done
+          # No Markdown file at the top of the plugin: those are notes for
+          # people working on Daymark (RECOVERY.md shipped this way through
+          # 0.22.0), and a new one is in neither ignore list until someone
+          # adds it. bin/check-dist.sh catches the same thing on every PR.
+          stray=$(unzip -Z1 daymark.zip | grep -E '^daymark/[^/]+\.md$' || true)
+          if [ -n "$stray" ]; then
+            echo "::error::Markdown file at the top of the zip: $stray"
+            exit 1
+          fi
           # Every file in the zip must be git-tracked — catches untracked
           # strays (build caches, local scratch files) .distignore missed.
           unzip -Z1 daymark.zip | sed -n 's|^daymark/||p' | grep -v '/$' | grep . | while read -r f; do

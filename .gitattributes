@@ -4,8 +4,9 @@
 # tarball from the tags/releases page gets a clean plugin, not the build repo.
 #
 # NOTE: This governs `git archive` only. The wp.org-ready daymark.zip is built
-# separately by `wp dist-archive` (see .github/workflows/release.yml), which
-# reads .distignore. Keep the two lists aligned when either changes.
+# separately with rsync (see .github/workflows/release.yml), which reads
+# .distignore. Keep the two lists aligned when either changes:
+# bin/check-dist.sh fails when they would ship different files, and CI runs it.
 
 # Normalize line endings.
 * text=auto
@@ -31,6 +32,7 @@ CHANGELOG.md       export-ignore
 CLAUDE.md          export-ignore
 CODE_OF_CONDUCT.md export-ignore
 CONTRIBUTING.md    export-ignore
+DEPENDENCIES.md    export-ignore
 SECURITY.md        export-ignore
 composer.json      export-ignore
 composer.lock      export-ignore

@@ -23,6 +23,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
+      # .distignore (the plugin zip) and .gitattributes (GitHub's source
+      # archives) must leave out the same files, and no Markdown file may sit
+      # at the top of the plugin. See the script's own header.
+      - name: Check what ships
+        run: bin/check-dist.sh
+
       - name: Build distribution copy (respects .distignore)
         run: |
           mkdir -p /tmp/dist/daymark
