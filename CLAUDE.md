@@ -327,7 +327,7 @@ do_action('daymark_import_responses', $post_id, $network_id);  // backflow trigg
 - [ ] No unauthenticated publishing endpoints
 - [ ] Expensive endpoints rate limited via `Daymark_Rate_Limiter` (AI / publish / autosave / sync actions; filter `daymark_rate_limits`)
 - [ ] Uploads checked per file **and** per request total (`Daymark_Publisher::validate_file_list()`, `MAX_TOTAL_FILE_BYTES`; filter `daymark_upload_total_max_bytes`); a chunked upload is checked at start, after its first part, and in full on finish, and a Mark only attaches the saving user's own staged uploads (`Daymark_Uploads::resolve_media_ids()`)
-- [ ] Any outbound request goes through `Daymark_Outbound_Guard`, and a new one (or new data on an existing one) is listed under "External services" in `readme.txt`
+- [ ] Any outbound request goes through `Daymark_Outbound_Guard`, and a new one (or new data on an existing one) is listed in `readme.txt`: under "External services" for a service someone else runs, or in the FAQ entry "What does my site send to the sites I follow?" for a request to a site the person chose (the Plugin Check job fails when either section is over wordpress.org's word limit)
 
 ## Sub-agent directory
 

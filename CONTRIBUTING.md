@@ -212,9 +212,14 @@ stubbed AT Protocol API — see the setup notes at the top of
   Daymark makes to another server goes through `Daymark_Outbound_Guard`
   (`get()`, `post()`, or `run()`), which checks the address and every
   redirect; a test fails on any call that doesn't. A new outbound call, or new
-  data sent on an existing one, also needs an entry under "External services"
-  in `readme.txt` saying what is sent, when, and where its terms and privacy
-  policy are.
+  data sent on an existing one, also needs an entry in `readme.txt` saying
+  what is sent, when, and where its terms and privacy policy are. A service
+  someone else runs (maps, weather, push, AI, WordPress.com, an embed
+  provider) goes under "External services" in the Description. A request to a
+  site or server the person chose to follow or respond to goes in the FAQ
+  entry "What does my site send to the sites I follow?". They are split
+  because wordpress.org shows only 2,500 words of the Description; the
+  Plugin Check job fails when either section outgrows its limit.
 - **Rate-limit expensive endpoints.** AI calls, publish, autosave, and manual
   sync actions go through `Daymark_Rate_Limiter` (see `rate_limit()` in the
   REST controller); a new expensive endpoint should, too. Composer autosave
@@ -449,9 +454,20 @@ bin/sync-changelog.sh --check   # what CI runs; fails with a diff if stale
 The generated section only ever keeps the most recent `MAX_VERSIONS` releases
 (currently 5, set at the top of `bin/sync-changelog.sh`) — a growing release
 history shouldn't reprint every past version on the plugin page and update
-screen forever. It ends with a link to `CHANGELOG.md` on GitHub for the full
-history. `CHANGELOG.md` itself is never trimmed; only what gets mirrored into
-`readme.txt` is.
+screen forever. It keeps fewer when five would not fit: wordpress.org shows
+only 5,000 words of the changelog and cuts the rest off mid-entry, so the
+script drops the oldest release until the section is within `MAX_WORDS`
+(4,800), and always keeps the newest. It ends with a link to `CHANGELOG.md` on
+GitHub for the full history. `CHANGELOG.md` itself is never trimmed; only what
+gets mirrored into `readme.txt` is.
+
+wordpress.org has a word limit for every readme section, not only the
+changelog: 2,500 words for the Description (which also takes any section it
+has no place for), and 5,000 for the FAQ. An upgrade notice can be at most 300
+characters. Plugin Check reads the readme the way the plugin directory does,
+and its CI job runs in strict mode, so a section or notice that is over fails
+the pull request. To see a section's size before pushing, count the words
+between its heading and the next one with `wc -w`.
 
 CI fails if the two have drifted, so wordpress.org can't end up showing a stale
 changelog.
@@ -492,7 +508,10 @@ plugin directory (`.github/workflows/release.yml`, whose last job calls
    `## [Unreleased]`, then run `bin/sync-changelog.sh` and commit the
    regenerated `readme.txt`. Add the `readme.txt` upgrade notice too — that one
    is hand-written, since it is a short wordpress.org-specific summary rather
-   than a changelog.
+   than a changelog. Keep it to 300 characters or fewer (Plugin Check fails a
+   longer one), and drop the oldest notice so the section holds the five most
+   recent releases; WordPress only ever shows the notice for the version
+   being installed.
 4. **Keep the release PR description short.** It becomes the commit message the
    tag points at, which is what anyone browsing the tag list reads first. Put
    post-merge steps in a PR comment rather than the description — or pass an

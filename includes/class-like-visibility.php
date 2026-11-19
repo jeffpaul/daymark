@@ -283,6 +283,7 @@ class Daymark_Like_Visibility {
 	 * @return array<string, mixed>
 	 */
 	public function exclude_from_rest_collection( array $args ): array {
+		// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Adds one NOT EXISTS clause to the query core already runs, so a Like Mark left on the `post` type stays out of the REST listing.
 		$args['meta_query'] = $this->add_exclusion( isset( $args['meta_query'] ) && is_array( $args['meta_query'] ) ? $args['meta_query'] : array() );
 
 		return $args;
@@ -338,6 +339,7 @@ class Daymark_Like_Visibility {
 			return $args;
 		}
 
+		// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Adds one NOT EXISTS clause to the query core already runs, so a Like Mark left on the `post` type stays out of the sitemap.
 		$args['meta_query'] = $this->add_exclusion( isset( $args['meta_query'] ) && is_array( $args['meta_query'] ) ? $args['meta_query'] : array() );
 
 		return $args;
