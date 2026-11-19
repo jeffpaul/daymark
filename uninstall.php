@@ -74,6 +74,7 @@ delete_metadata( 'user', 0, 'daymark_push_prefs', '', true );
 delete_metadata( 'comment', 0, '_daymark_push_sent', '', true );
 delete_metadata( 'user', 0, 'daymark_timeline_last_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_timeline_position', '', true );
+delete_metadata( 'user', 0, 'daymark_explore_seen_at', '', true );
 delete_metadata( 'user', 0, 'daymark_interaction_hint_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_first_mark_claimed', '', true );
 delete_metadata( 'user', 0, 'daymark_plugin_overlap_dismissed', '', true );

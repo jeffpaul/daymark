@@ -503,32 +503,45 @@ class Daymark_Subscription_Post_Type {
 	}
 
 	/**
-	 * When each followed site last posted: the newest `published_at` among
-	 * the posts kept from it, keyed by subscription ID. One grouped query,
-	 * for Explore's People row, which puts whoever posted last first.
+	 * Two times for each followed site, keyed by subscription ID, from one
+	 * grouped query over the posts kept from it. Both are for Explore's
+	 * People row.
 	 *
-	 * A post dated in the future (some feeds carry one) is left out, so it
-	 * can't hold its site at the front until that date arrives. A site with
-	 * no post kept has no entry.
+	 * `posted` is when the site last posted: the newest `published_at`. The
+	 * row puts whoever posted last first. A post dated in the future (some
+	 * feeds carry one) is left out, so it can't hold its site at the front
+	 * until that date arrives. '' when no kept post has a usable date.
+	 *
+	 * `received` is when a post of its last arrived here: the newest
+	 * `post_date_gmt`, which is this site's clock at the moment the post was
+	 * saved. The row rings a site whose `received` is after the user's last
+	 * visit (Daymark_Explore_Seen). A post's own date can't answer that: a
+	 * post written at ten and fetched at eleven is new to someone who
+	 * looked at half past ten.
+	 *
+	 * A site with no post kept has no entry.
 	 *
 	 * @since 0.23.0
 	 *
-	 * @return array<int, string> Subscription ID => `Y-m-d H:i:s`, UTC.
+	 * @return array<int, array{posted: string, received: string}> Times as
+	 *                                                             `Y-m-d H:i:s`, UTC.
 	 */
-	public static function latest_post_times(): array {
+	public static function latest_times(): array {
 		global $wpdb;
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- One grouped read across every followed post; WP_Query has no GROUP BY.
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT sub.meta_value AS subscription_id, MAX( pub.meta_value ) AS latest
+				"SELECT sub.meta_value AS subscription_id,
+					MAX( CASE WHEN pub.meta_value <> '' AND pub.meta_value <= %s THEN pub.meta_value END ) AS posted,
+					MAX( p.post_date_gmt ) AS received
 				FROM {$wpdb->posts} p
 				INNER JOIN {$wpdb->postmeta} sub ON sub.post_id = p.ID AND sub.meta_key = 'subscription_id'
-				INNER JOIN {$wpdb->postmeta} pub ON pub.post_id = p.ID AND pub.meta_key = 'published_at'
-				WHERE p.post_type = %s AND p.post_status = 'publish' AND pub.meta_value <> '' AND pub.meta_value <= %s
+				LEFT JOIN {$wpdb->postmeta} pub ON pub.post_id = p.ID AND pub.meta_key = 'published_at'
+				WHERE p.post_type = %s AND p.post_status = 'publish'
 				GROUP BY sub.meta_value",
-				self::POST_TYPE,
-				gmdate( 'Y-m-d H:i:s' )
+				gmdate( 'Y-m-d H:i:s' ),
+				self::POST_TYPE
 			),
 			ARRAY_A
 		);
@@ -536,11 +549,13 @@ class Daymark_Subscription_Post_Type {
 		$times = array();
 
 		foreach ( is_array( $rows ) ? $rows : array() as $row ) {
-			$id     = absint( $row['subscription_id'] ?? 0 );
-			$latest = self::sanitize_datetime( (string) ( $row['latest'] ?? '' ) );
+			$id = absint( $row['subscription_id'] ?? 0 );
 
-			if ( $id && '' !== $latest ) {
-				$times[ $id ] = $latest;
+			if ( $id ) {
+				$times[ $id ] = array(
+					'posted'   => self::sanitize_datetime( (string) ( $row['posted'] ?? '' ) ),
+					'received' => self::sanitize_datetime( (string) ( $row['received'] ?? '' ) ),
+				);
 			}
 		}
 

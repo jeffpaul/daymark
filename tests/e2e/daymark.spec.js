@@ -3810,6 +3810,122 @@ test('notifications: is a tab in the bottom bar', async ({ page }) => {
 	await expect(page.locator('[data-search-input]')).toBeVisible();
 });
 
+// Explore's People row rings whoever has a post that arrived since your
+// last visit to Explore, and "See all" beside its heading opens the
+// Following page, which then goes Back to Explore. The rings last for the
+// visit: the Following page and back keeps them, tapping a person ends
+// theirs, and leaving for another tab ends the visit. The followed sites
+// and the site's answer about your last visit are canned, so the test
+// needs no real feed and no waiting between visits.
+test('explore: People rings who posted since your last visit, and See all opens Following with a way back', async ({
+	page,
+}) => {
+	await loginAs(page);
+	const sites = [
+		{ id: 990201, site_title: 'Fresh Example', last_post_at: '2026-03-01T18:30:00+00:00', last_received_at: '2026-03-01T19:00:00+00:00' },
+		// Written before the last visit, but only fetched after it.
+		{ id: 990202, site_title: 'Late Example', last_post_at: '2026-01-20T08:00:00+00:00', last_received_at: '2026-02-10T08:00:00+00:00' },
+		{ id: 990203, site_title: 'Seen Example', last_post_at: '2026-01-05T09:00:00+00:00', last_received_at: '2026-01-05T09:30:00+00:00' },
+		{ id: 990204, site_title: 'Quiet Example', last_post_at: '', last_received_at: '' },
+	].map((site) => Object.assign({ site_url: `https://site-${site.id}.example/`, site_icon_url: '', favorite: false }, site));
+	await page.route(/\/daymark\/v1\/subscriptions(\?|$)/, async (route) => {
+		if ('GET' !== route.request().method()) {
+			await route.continue();
+			return;
+		}
+		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(sites) });
+	});
+	// The first visit is told the one before it was on February 1; any
+	// later visit is told the one before it was just now.
+	let visits = 0;
+	await page.route(/\/daymark\/v1\/explore\/seen(\?|$)/, async (route) => {
+		visits += 1;
+		const now = new Date().toISOString().replace(/\.\d+Z$/, '+00:00');
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ previous: 1 === visits ? '2026-02-01T00:00:00+00:00' : now, seen: now }),
+		});
+	});
+	await page.goto('/daymark/explore');
+
+	const start = page.locator('[data-search-start]');
+	const person = (id) => start.locator(`[data-start-source="${id}"]`);
+	const ringed = start.locator('.daymark-searchstart__person.is-new');
+
+	// Ringed: the two with a post received since February 1, and never You.
+	await expect(start.locator('.daymark-searchstart__name')).toHaveText([
+		'You',
+		'Fresh Example',
+		'Late Example',
+		'Seen Example',
+		'Quiet Example',
+	]);
+	await expect(ringed).toHaveCount(2);
+	await expect(person(990201)).toHaveClass(/is-new/);
+	await expect(person(990202)).toHaveClass(/is-new/);
+	await expect(person(990201)).toHaveAccessibleName('Fresh Example, new posts');
+	await expect(person(990203)).toHaveAccessibleName('Seen Example');
+	await expect(person('mine')).not.toHaveClass(/is-new/);
+	// The ring is drawn around the picture, and the row is no taller for it.
+	const shadow = await person(990201)
+		.locator('.daymark-searchstart__avatar')
+		.evaluate((el) => getComputedStyle(el).boxShadow);
+	expect(shadow).not.toBe('none');
+	const freshBox = await person(990201).boundingBox();
+	const seenBox = await person(990203).boundingBox();
+	expect(Math.round(freshBox.y)).toBe(Math.round(seenBox.y));
+	expect(visits).toBe(1);
+
+	// See all sits beside the People heading and opens the Following page,
+	// still under the Explore tab, with Back to Explore.
+	const seeAll = start.getByRole('link', { name: 'See all the sites you follow' });
+	await expect(seeAll).toHaveText('See all');
+	const headingBox = await page.locator('#daymark-search-people-heading').boundingBox();
+	const seeAllBox = await seeAll.boundingBox();
+	expect(seeAllBox.x).toBeGreaterThan(headingBox.x + headingBox.width);
+	expect(seeAllBox.height).toBeGreaterThanOrEqual(44);
+	await seeAll.click();
+	await expect(page).toHaveURL(/#following$/);
+	await expect(page.getByRole('heading', { level: 1, name: 'Following' })).toBeFocused();
+	await expect(page.locator('[data-following-site]')).toHaveCount(sites.length);
+	await expect(page.locator('a.daymark-bottomnav__link[href="#explore"]')).toHaveClass(/is-active/);
+	await expect(page.locator('a.daymark-bottomnav__link[href="#me"]')).not.toHaveClass(/is-active/);
+	const back = page.getByRole('link', { name: 'Back to Explore' });
+	await expect(back).toBeVisible();
+
+	// Back is the same visit: the rings are still there, and the site was
+	// not told about a new one.
+	await back.click();
+	await expect(page).toHaveURL(/#explore$/);
+	await expect(ringed).toHaveCount(2);
+	expect(visits).toBe(1);
+
+	// Tapping a ringed person shows their posts and ends their ring.
+	await person(990201).click();
+	await expect(page.locator('[data-source-filter]')).toHaveValue('990201');
+	await page.locator('[data-source-filter]').selectOption('');
+	await expect(start).toBeVisible();
+	await expect(person(990201)).not.toHaveClass(/is-new/);
+	await expect(person(990202)).toHaveClass(/is-new/);
+
+	// Another tab and back is a new visit: the site is told, and nothing
+	// has arrived since the one before, so no one is ringed.
+	await page.locator('a.daymark-bottomnav__link[href="#me"]').evaluate((el) => el.click());
+	await expect(page.locator('[data-me-connlist] [data-conn="following"]')).toBeVisible();
+	await page.locator('a.daymark-bottomnav__link[href="#explore"]').evaluate((el) => el.click());
+	await expect(start.locator('.daymark-searchstart__name').first()).toHaveText('You');
+	await expect.poll(() => visits).toBe(2);
+	await expect(ringed).toHaveCount(0);
+
+	// From Me, the Following page still goes Back to Me.
+	await page.locator('a.daymark-bottomnav__link[href="#me"]').evaluate((el) => el.click());
+	await page.locator('[data-me-connlist] [data-conn="following"]').click();
+	await expect(page).toHaveURL(/#following$/);
+	await expect(page.getByRole('link', { name: 'Back to Me' })).toBeVisible();
+	await expect(page.locator('a.daymark-bottomnav__link[href="#me"]')).toHaveClass(/is-active/);
+});
+
 // Search's starting screen (issue #269): recent searches kept on this
 // device, the people you follow (you first), and your most used tags.
 test('search: starts with recent searches, people and tags', async ({ page }) => {

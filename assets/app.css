@@ -5372,6 +5372,37 @@ a.daymark-meconn__row:focus-visible .daymark-melink__external {
 	scrollbar-width: none;
 }
 
+/* The People heading with "See all" beside it, which opens the Following
+   page. */
+.daymark-searchstart__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--daymark-spacing-md);
+}
+
+.daymark-searchstart__all {
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-end;
+	min-width: var(--daymark-tap-min);
+	min-height: var(--daymark-tap-min);
+	color: var(--daymark-accent);
+	font-size: 14px;
+	text-decoration: none;
+}
+
+.daymark-searchstart__all:hover,
+.daymark-searchstart__all:focus-visible {
+	text-decoration: underline;
+}
+
+.daymark-searchstart__all:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+	border-radius: var(--daymark-radius-sm);
+}
+
 .daymark-searchstart__people::-webkit-scrollbar {
 	display: none;
 }
@@ -5400,6 +5431,20 @@ a.daymark-meconn__row:focus-visible .daymark-melink__external {
 	border-radius: 50%;
 	object-fit: cover;
 	background: var(--daymark-surface);
+}
+
+/* Someone with a post that arrived since your last visit to Explore: a
+   ring around the picture, drawn outside it so nothing moves, and a
+   bolder name so color isn't the only sign. */
+.daymark-searchstart__person.is-new .daymark-searchstart__avatar {
+	box-shadow:
+		0 0 0 2px var(--daymark-bg),
+		0 0 0 4px var(--daymark-accent);
+}
+
+.daymark-searchstart__person.is-new .daymark-searchstart__name {
+	color: var(--daymark-text-primary);
+	font-weight: 600;
 }
 
 .daymark-searchstart__avatar--glyph,
