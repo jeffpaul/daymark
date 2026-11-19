@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-19
+
+Daymark 0.23.0 makes the app feel more like the social apps you already know, while everything you post still lives on your own site first. You can crop or turn a photo and set a Mark to publish later, and Publish is now the composer's one big button. Explore and Search are one tab that finds people, tags and places, Notifications has its own tab in the bottom bar, and Me opens with a calendar of the days you published on and a card of the places your Marks are shared. Following friends' own sites gets easier too: Explore suggests sites from people already around yours, and a reading list kept on a Microsub server can be brought in.
+
 ### Added
 
 - Tap a photo while you write a Mark to give it a shape (Original, Square, Tall or Wide, cut from the middle) or turn it with Rotate, so a sideways or badly framed photo no longer means a trip to the Photos app first. Your site makes the edit and keeps the original, and Original puts it back. ([#612](https://github.com/jeffpaul/daymark/pull/612))
@@ -29,51 +33,36 @@ can't act on them.
 - The Me screen now opens with your drafts and "Your days", a month calendar of the days you published on. Tap a day to see that day's Marks. Your name now shows your site and how many Marks you have published, and the links sit below under "App and account". Builds on the Me screen yusuf-saif proposed in [#432](https://github.com/jeffpaul/daymark/pull/432). ([#616](https://github.com/jeffpaul/daymark/pull/616))
 - The Me screen has a new Connections card: your site, each place your Marks are also shared, and how many sites you follow (with a flag when one can't be reached). Tapping a row opens the place to act on it. Following opens a page of every site you follow, with the favorite stars and Follow a site, and a Back button to Me. Builds on the Connections tab yusuf-saif proposed in [#432](https://github.com/jeffpaul/daymark/pull/432). ([#617](https://github.com/jeffpaul/daymark/pull/617), [#618](https://github.com/jeffpaul/daymark/pull/618))
 - On Explore, the People row now rings anyone whose posts have arrived since you last opened Explore, so you can see who is new at a glance. A new "See all" link beside it opens the full list of sites you follow. ([#619](https://github.com/jeffpaul/daymark/pull/619))
-
 - Explore has a new section, "Sites you might follow": a short list of sites you don't follow yet, taken only from people already around your site. Each one says why it is there (it follows you, or its owner replied to or liked your Marks), Follow opens Follow a site with the address filled in, and "Not now" hides it for good. Nothing is ranked and nothing leaves your site. ([#622](https://github.com/jeffpaul/daymark/pull/622))
 
 ### Changed
 
 - Daymark's wordpress.org page has eight new screenshots in place of four that showed screens the app no longer has: the Timeline with friends' posts, the composer, an open post, Explore, Notifications, Me, Follow a site, and the settings page. The README now shows three of them too. ([#625](https://github.com/jeffpaul/daymark/pull/625))
-- Explore and Search are now one tab. Search sits at the top with a Bookmarks button beside it, and under it are your recent searches, the people you follow (whoever posted last comes first), your most-used tags and On this day. The tab's icon is a magnifying glass with the compass needle inside. ([#615](https://github.com/jeffpaul/daymark/pull/615), [#618](https://github.com/jeffpaul/daymark/pull/618))
+- Explore and Search are now one tab. Search sits at the top with a Bookmarks button beside it, and under it are your recent searches, the people you follow (whoever posted last comes first), your most-used tags and Look back. The tab's icon is a magnifying glass with the compass needle inside. ([#615](https://github.com/jeffpaul/daymark/pull/615), [#618](https://github.com/jeffpaul/daymark/pull/618))
 - On Explore, "On this day" is now "Look back": a strip of small tiles you swipe through. It still shows your posts from this date in earlier years, and now adds one from the same week in a year that has none on the date itself, one from six months ago and one from a month ago, so there is something to find on most days. Tap a tile to open the post. Builds on the "On this day" section yusuf-saif added in [#413](https://github.com/jeffpaul/daymark/pull/413). ([#620](https://github.com/jeffpaul/daymark/pull/620))
 - Notifications is now a tab in the bottom bar, where Search used to be, and it shows a mark when something new is waiting. The bell is gone from the top of each screen. ([#615](https://github.com/jeffpaul/daymark/pull/615))
 - With nothing typed, search shows a quiet starting screen where it used to show a copy of the Timeline. Its filters now sit in one row that slides sideways, so results start higher on the screen. ([#615](https://github.com/jeffpaul/daymark/pull/615))
-
 - While you write a Mark, the first destination now shows your site's own icon and address (such as "example.com") where it used to say "Your site", and the "Where this goes" list shows your site's name and address. It's a small reminder that every Mark lives on your own site first. ([#595](https://github.com/jeffpaul/daymark/pull/595))
-
 - The "Where this goes" sheet now shows each network's icon and the account your Mark will be posted as: your Bluesky handle from ATmosphere, your Mastodon address from Share on Mastodon, or your X account from Autopost for X, with the sharing plugin named in small print. The network's chip on the composer carries its icon too. ([#596](https://github.com/jeffpaul/daymark/pull/596))
-
 - "Published." now comes with a small check mark that pops in, and the first Mark you ever publish gets a short burst of confetti. Both stay still when your device asks for reduced motion. ([#597](https://github.com/jeffpaul/daymark/pull/597))
-
 - On the composer, Publish is now the one big button. "Save as draft" sits beside it as a quiet text button, since Daymark already saves a draft as you type and when you leave. ([#610](https://github.com/jeffpaul/daymark/pull/610))
-
 - Daymark's plugin description and README now use six lines from the original planning notes, such as "Publish once. Own it forever. Share everywhere.", to say in everyday words why posting on your own site first matters. ([#600](https://github.com/jeffpaul/daymark/pull/600))
-
 - A Timeline with nothing on it yet now greets you with a welcome card: what Daymark is for, a big "Publish your first Mark" button, and "Follow a site" beside it. Before, it was one line of small text. ([#598](https://github.com/jeffpaul/daymark/pull/598))
-
 - A Mark with several photos is quicker to finish. The photo row now ends in an "Add" tile, so another photo or video can be added right where the photos are. Each photo's sheet has previous and next arrows and a "Next photo" button, so you can describe every photo in one pass without closing the sheet in between. ([#609](https://github.com/jeffpaul/daymark/pull/609))
-
 - Daymark's banner on wordpress.org is calmer: a sunrise with the five kinds of Mark (photo, video, check-in, audio, note) in an arc above it, the way they fan out from the + button in the app. It replaces the crowded artwork of glass cards and light trails. ([#626](https://github.com/jeffpaul/daymark/pull/626))
 
 ### Fixed
 
 - On an iPhone or iPad, the Install card no longer tells everyone to look "in Safari". Firefox and Chrome each get their own Add to Home Screen steps, Safari's steps say where Share is hiding on newer iPhones, and any other browser gets steps that name no browser. ([#605](https://github.com/jeffpaul/daymark/pull/605))
-
 - Adding Daymark to an iPhone's home screen from Firefox now shows the Daymark icon instead of a blank tile. Firefox doesn't pass the page's own icon along, so iOS looks for one at the top of your site (`/apple-touch-icon.png`), and Daymark now answers there. That address stands for your whole site, so a site that wants its own picture there can put a file at that address or use the `daymark_root_touch_icon_file` filter. ([#606](https://github.com/jeffpaul/daymark/pull/606))
-
 - Opening a post from a followed site that uses a newer WordPress block theme now shows that post's own text. Some of these sites list other stories lower on the page, and Daymark could show one of those under the post's title. For a post you already opened, use "Refresh content" to fetch it again. ([#607](https://github.com/jeffpaul/daymark/pull/607))
 
 ### Developer
 
 - The sound-file tests now pass on WordPress 7.2, which accepts a browser's MP4 recording named .m4a on its own and stores it as audio/mpeg, like any .m4a file. Daymark keeps that type; older WordPress still gets audio/mp4. ([#599](https://github.com/jeffpaul/daymark/pull/599))
-
 - The browser tests for a Check In at a typed place now wait long enough for the weather lookup on the site, which may take 4 seconds when the weather service is slow. They failed whenever it did. ([#603](https://github.com/jeffpaul/daymark/pull/603))
-
 - The browser test for a per-Mark sharing switch now reads the publish request in a way that can't miss it. The old check could come up empty and fail the test even though the Mark was published correctly. ([#604](https://github.com/jeffpaul/daymark/pull/604))
-
 - A release now goes to the wordpress.org plugin directory by itself. Pushing a version tag still builds the zip and publishes the GitHub release, and the same run then sends that version, with the banner, icon and screenshots, to wordpress.org. ([#628](https://github.com/jeffpaul/daymark/pull/628))
-
 - The plugin no longer carries RECOVERY.md, an old project note that had shipped in every release since August, and the file is gone from the repository. GitHub's source downloads now leave out DEPENDENCIES.md, as the plugin zip already did, and a new check fails when the two would ship different files or a stray Markdown file. ([#627](https://github.com/jeffpaul/daymark/pull/627))
 
 ## [0.22.0] - 2026-11-05
@@ -886,7 +875,8 @@ Daymark 0.22.0 makes posting from your phone to your own site feel more like a s
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.22.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.23.0...HEAD
+[0.23.0]: https://github.com/jeffpaul/daymark/compare/0.22.0...0.23.0
 [0.22.0]: https://github.com/jeffpaul/daymark/compare/0.21.0...0.22.0
 [0.21.0]: https://github.com/jeffpaul/daymark/compare/0.20.0...0.21.0
 [0.20.0]: https://github.com/jeffpaul/daymark/compare/0.19.0...0.20.0
