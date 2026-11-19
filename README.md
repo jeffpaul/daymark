@@ -13,6 +13,12 @@
 
 > Your own social app: follow your friends in one calm, chronological feed, and post from your phone to your site and the networks you use.
 
+<p align="center">
+  <img src=".wordpress-org/screenshot-1.png" width="30%" alt="The Daymark Timeline on a phone: a friend's photo post, then your own, in one feed." />
+  <img src=".wordpress-org/screenshot-2.png" width="30%" alt="The New Mark composer: two photos, a caption, where the Mark goes, and a Publish button." />
+  <img src=".wordpress-org/screenshot-4.png" width="30%" alt="Explore: search, the people you follow, your tags, and Look back." />
+</p>
+
 ## Your friends, your feed, your site
 
 Daymark is your own social app, built on your WordPress site. Follow the
