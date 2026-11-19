@@ -22,11 +22,11 @@ can't act on them.
 
 ### Fixed
 
-- Daymark's page on wordpress.org no longer cuts off its description and its changelog. Both were longer than wordpress.org shows, so the list of outside services stopped partway through and the changelog stopped inside an older release. The details of what your site sends to sites you follow now sit in the FAQ, and the changelog lists the three most recent releases.
+- Daymark's page on wordpress.org no longer cuts off its description and its changelog. Both were longer than wordpress.org shows, so the list of outside services stopped partway through and the changelog stopped inside an older release. The details of what your site sends to sites you follow now sit in the FAQ, and the changelog lists the three most recent releases. ([#630](https://github.com/jeffpaul/daymark/pull/630))
 
 ### Developer
 
-- Plugin Check warnings now fail a pull request, where before only its errors did. The 25 warnings it had were cleared first, among them upgrade notices over 300 characters, and the readme changelog now keeps only the recent releases that fit.
+- Plugin Check warnings now fail a pull request, where before only its errors did. The 25 warnings it had were cleared first, among them upgrade notices over 300 characters, and the readme changelog now keeps only the recent releases that fit. ([#630](https://github.com/jeffpaul/daymark/pull/630))
 
 ## [0.23.0] - 2026-11-19
 
