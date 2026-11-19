@@ -393,6 +393,13 @@ decision rows for the full technical record.
   grouped under "App and account". Its Following row opens a page of
   every followed site, with the favorite stars and Follow a site.
 
+Both are done, and the umbrella issue they came from
+([#269](https://github.com/jeffpaul/daymark/issues/269)) is closed. What
+came out of them for later is a page for each person you follow
+([#614](https://github.com/jeffpaul/daymark/issues/614)) and suggesting
+sites that the people you follow link to
+([#623](https://github.com/jeffpaul/daymark/issues/623)).
+
 ---
 
 ## Shipped — Offline-first creation (issue #121)
@@ -867,19 +874,23 @@ that loop without new destinations or a new social network.
 - **Show a Check In's weather and a photo's camera details** ([#589](https://github.com/jeffpaul/daymark/issues/589)).
   Captured quietly since the metadata work, but still shown nowhere — see
   "Shipped — Quiet Mark metadata capture" above.
-- **Explore, Search, and Me's remaining scope** — see "Shipped — Bottom
-  navigation rework" above. Search's date filter and Explore's
-  memories section shipped together ([#413](https://github.com/jeffpaul/daymark/pull/413)),
-  and Search's starting screen, shortcuts, and single filter row followed,
-  along with folding Search into the Explore tab and moving Notifications
-  into the bar ([#615](https://github.com/jeffpaul/daymark/pull/615)). A page for each
-  person you follow is tracked on its own
-  ([#614](https://github.com/jeffpaul/daymark/issues/614)).
-  Me's three directions have since shipped too
-  ([#295](https://github.com/jeffpaul/daymark/issues/295)), and Explore's
-  open half ([#294](https://github.com/jeffpaul/daymark/issues/294)) is
-  closed: what is left of it is the later slice of "Sites you might follow"
-  ([#621](https://github.com/jeffpaul/daymark/issues/621)).
+- **Explore, Search, and Me's remaining scope**: the umbrella issue for it
+  ([#269](https://github.com/jeffpaul/daymark/issues/269)) is closed, with
+  nothing left to build — see "Shipped — Bottom navigation rework" above.
+  Search's date filter and Explore's memories section shipped together
+  ([#413](https://github.com/jeffpaul/daymark/pull/413)), and Search's
+  starting screen, shortcuts, and single filter row followed, along with
+  folding Search into the Explore tab and moving Notifications into the bar
+  ([#615](https://github.com/jeffpaul/daymark/pull/615)). Me's three
+  directions shipped ([#295](https://github.com/jeffpaul/daymark/issues/295)),
+  and so did Explore's
+  ([#294](https://github.com/jeffpaul/daymark/issues/294)), ending with
+  "Sites you might follow"
+  ([#622](https://github.com/jeffpaul/daymark/pull/622)). Two ideas from
+  that work wait on their own for a later release: a page for each person
+  you follow ([#614](https://github.com/jeffpaul/daymark/issues/614)), and
+  suggesting sites that the people you follow link to
+  ([#623](https://github.com/jeffpaul/daymark/issues/623)).
 - **Smaller ideas, tracked but unscheduled**: AI-written summaries for
   followed posts ([#224](https://github.com/jeffpaul/daymark/issues/224)), hiding Mark types from the +New launcher
   ([#398](https://github.com/jeffpaul/daymark/issues/398)), and seeing your followers with a follow-back option
