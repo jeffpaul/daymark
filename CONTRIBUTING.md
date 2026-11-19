@@ -458,8 +458,10 @@ changelog.
 
 ## Releasing
 
-Releases are tag-driven: pushing a version tag builds the distribution zip and
-publishes the GitHub release (`.github/workflows/release.yml`).
+Releases are tag-driven: pushing a version tag builds the distribution zip,
+publishes the GitHub release, and then sends that version to the wordpress.org
+plugin directory (`.github/workflows/release.yml`, whose last job calls
+`.github/workflows/wporg-plugin-deploy.yml`).
 
 1. **Dependency update check (pre-release).** Before running the test suite,
    check for outdated npm and Composer dependencies:
@@ -506,6 +508,47 @@ publishes the GitHub release (`.github/workflows/release.yml`).
    that nothing untracked or dev-only leaked into it, and creates the release
    with notes from the changelog. It is safe to re-run against an existing
    release: the zip is re-uploaded and hand-written notes are left alone.
+7. **Check wordpress.org.** Once the release is published, the workflow's
+   `Deploy to wordpress.org` job commits the tag to the plugin directory's
+   SVN: `trunk` and `tags/X.Y.Z` get the same files as the zip, and `assets`
+   gets the files at the top level of `.wordpress-org/` (banner, icon,
+   screenshots). Open the
+   [plugin page](https://wordpress.org/plugins/daymark/) and confirm the new
+   version. wordpress.org may take a few minutes to rebuild the zip and the
+   page.
+
+### Deploying to wordpress.org
+
+The deploy uses
+[10up/action-wordpress-plugin-deploy](https://github.com/10up/action-wordpress-plugin-deploy)
+and needs two repository secrets (Settings -> Secrets and variables ->
+Actions):
+
+- `SVN_USERNAME`: the wordpress.org username of a committer on the plugin. It
+  is case-sensitive, and it is the username, not the email address.
+- `SVN_PASSWORD`: that account's SVN password, which is set on the
+  wordpress.org profile under Account & Security. It is not the password used
+  to log in to wordpress.org.
+
+Things to know:
+
+- **Only a pushed tag deploys.** Publishing a release from GitHub's web page
+  does not, and neither does "Run workflow".
+- **Preview first.** "Run workflow" on the *Deploy to WordPress.org* workflow
+  is always a dry run. It does everything except the SVN commit and prints
+  `svn status`, so the log lists what a deploy of that branch or tag would
+  add, change and delete. It does not need the secrets.
+- **The directory mirrors the repository.** Files in SVN `trunk` or `assets`
+  that are not in the repository are deleted by the deploy, so add a banner,
+  icon or screenshot to `.wordpress-org/` instead of uploading it by hand.
+  Folders inside `.wordpress-org/` (such as `src/`, the originals the assets
+  are made from) are not uploaded.
+- **A version is sent once.** If `tags/X.Y.Z` already exists in SVN the deploy
+  stops without changing anything, so a re-run is safe, and a fix after a
+  deploy needs a new version.
+- **If the deploy job fails** (a missing secret, wordpress.org being down),
+  fix the cause and use "Re-run failed jobs" on the Release run. The GitHub
+  release is already published and is left alone.
 
 ## License
 

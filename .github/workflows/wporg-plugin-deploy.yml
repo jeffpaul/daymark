@@ -1,0 +1,104 @@
+name: Deploy to WordPress.org
+
+# Sends a release to the wordpress.org plugin directory with
+# 10up/action-wordpress-plugin-deploy, modeled on WordPress/ai's workflow of
+# the same name. The action copies the checkout into the directory's SVN
+# `trunk` (leaving out everything .distignore lists, the same list release.yml
+# and plugin-check.yml build from), copies `.wordpress-org/` into SVN `assets`
+# (banner, icon, screenshots), tags the version, and commits all three at once.
+#
+# There are two ways in, and only the first one changes wordpress.org:
+#
+# - The Release workflow calls this file (release.yml's `deploy` job) after it
+#   has published the GitHub release for a pushed version tag.
+#
+#   WordPress/ai starts on `release: published` instead. That can't work here:
+#   release.yml publishes the release with the workflow's own token, and GitHub
+#   starts no other workflow from an event that token causes. Being called has
+#   a second benefit: a deploy can only follow release.yml's version and zip
+#   guards, and a release published by hand can't skip them.
+#
+# - "Run workflow" on the Actions tab is always a dry run. It does everything
+#   up to the SVN commit and prints `svn status`, so the log shows what a
+#   deploy of the chosen branch or tag would add, change and delete on
+#   wordpress.org. It never reads the SVN password, so it works before the
+#   secrets exist.
+#
+# Secrets (repository Settings -> Secrets and variables -> Actions):
+#   SVN_USERNAME  the wordpress.org username of a committer on the plugin
+#   SVN_PASSWORD  that account's SVN password, set on the wordpress.org
+#                 profile under Account & Security (not the login password)
+#
+# Safe to run again for a version that is already on wordpress.org: the action
+# sees the SVN tag and stops without changing anything. That also means a
+# version is sent once. To fix something after that, release a new version.
+
+on:
+  workflow_call:
+    secrets:
+      SVN_USERNAME:
+        required: false
+      SVN_PASSWORD:
+        required: false
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  deploy:
+    name: Plugin directory
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    # One deploy at a time: two SVN commits to the same plugin must not race.
+    concurrency:
+      group: wporg-plugin-deploy
+      cancel-in-progress: false
+    env:
+      # A real deploy only ever comes from a pushed tag, which is how
+      # release.yml calls this file (a called workflow sees its caller's
+      # event). Everything else, "Run workflow" included, is a dry run.
+      DRY_RUN: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The action copies all of .wordpress-org/ into SVN `assets`, folders
+      # included. Only the files at its top level are wordpress.org assets;
+      # folders such as src/ hold the large originals they were made from.
+      # `blueprints/` is the one folder wordpress.org itself reads there (the
+      # plugin page's live preview), so it is kept if it is ever added.
+      - name: Leave asset source folders out of the upload
+        run: |
+          find .wordpress-org -mindepth 1 -maxdepth 1 -type d ! -name blueprints -print -exec rm -rf {} +
+          echo "--- going to SVN assets ---"
+          find .wordpress-org -type f | sort
+
+      - name: Deploy to the wordpress.org plugin directory
+        uses: 10up/action-wordpress-plugin-deploy@54bd289b8525fd23a5c365ec369185f2966529c2 # 2.3.0
+        with:
+          dry-run: ${{ env.DRY_RUN }}
+        env:
+          # The wordpress.org slug. Set here so a fork or a renamed
+          # repository can never aim at a different plugin.
+          SLUG: daymark
+          # Left empty for a real deploy, so the action takes the version
+          # from the tag (a leading "v" is dropped). A dry run may be on a
+          # branch, which has no version, so it gets a placeholder that only
+          # names the tag folder in the runner's throwaway SVN checkout.
+          VERSION: ${{ env.DRY_RUN == 'true' && 'dry-run' || '' }}
+          # The action refuses to start without both values, though a dry
+          # run never uses them, so a dry run gets placeholders and the real
+          # secrets stay out of it.
+          SVN_USERNAME: ${{ env.DRY_RUN == 'true' && 'dry-run' || secrets.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ env.DRY_RUN == 'true' && 'dry-run' || secrets.SVN_PASSWORD }}
+
+      - name: Say what happened
+        run: |
+          if [ "$DRY_RUN" = 'true' ]; then
+            echo "Dry run of \`$GITHUB_REF_NAME\`: nothing was sent to wordpress.org. The deploy step's \`svn status\` output lists what a release would add (A), change (M) and delete (D)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Version \`${GITHUB_REF_NAME#v}\` is on wordpress.org: https://wordpress.org/plugins/daymark/ (unless the deploy step's log says it was already published, in which case nothing changed)." >> "$GITHUB_STEP_SUMMARY"
+          fi

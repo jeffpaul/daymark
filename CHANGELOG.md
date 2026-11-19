@@ -70,6 +70,8 @@ can't act on them.
 
 - The browser test for a per-Mark sharing switch now reads the publish request in a way that can't miss it. The old check could come up empty and fail the test even though the Mark was published correctly. ([#604](https://github.com/jeffpaul/daymark/pull/604))
 
+- A release now goes to the wordpress.org plugin directory by itself. Pushing a version tag still builds the zip and publishes the GitHub release, and the same run then sends that version, with the banner, icon and screenshots, to wordpress.org. ([#628](https://github.com/jeffpaul/daymark/pull/628))
+
 - The plugin no longer carries RECOVERY.md, an old project note that had shipped in every release since August, and the file is gone from the repository. GitHub's source downloads now leave out DEPENDENCIES.md, as the plugin zip already did, and a new check fails when the two would ship different files or a stray Markdown file. ([#627](https://github.com/jeffpaul/daymark/pull/627))
 
 ## [0.22.0] - 2026-11-05
