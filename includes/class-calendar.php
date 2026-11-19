@@ -187,11 +187,12 @@ class Daymark_Calendar {
 
 	/**
 	 * The query every lookup here shares: the site's own published posts,
-	 * as GET /timeline's `mine` filter lists them.
+	 * as GET /timeline's `mine` filter lists them. Explore's "Look back"
+	 * strip (Daymark_Look_Back) reads the same posts.
 	 *
 	 * @return array<string, mixed> WP_Query arguments.
 	 */
-	private static function base_args(): array {
+	public static function base_args(): array {
 		return array(
 			'post_type'              => array_values( array_unique( array_merge( array( 'post' ), Daymark_External_Notes::post_types() ) ) ),
 			'post_status'            => 'publish',
@@ -213,12 +214,13 @@ class Daymark_Calendar {
 	/**
 	 * A small picture for a day's square: the post's featured image, else
 	 * the first image it was published with. Nothing for a
-	 * password-protected post.
+	 * password-protected post. Daymark_Look_Back uses it to prefer a post
+	 * with a picture.
 	 *
 	 * @param WP_Post $post The post.
 	 * @return string Image URL, or '' for none.
 	 */
-	private static function thumbnail_url( WP_Post $post ): string {
+	public static function thumbnail_url( WP_Post $post ): string {
 		if ( '' !== (string) $post->post_password ) {
 			return '';
 		}

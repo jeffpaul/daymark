@@ -360,6 +360,13 @@ decision rows for the full technical record.
   bell for its own tab, which shows an unread mark. One icon for the merged
   tab: a magnifying glass with the compass needle inside. Old Search links
   still open it. ([#615](https://github.com/jeffpaul/daymark/pull/615))
+- [x] **Explore: Look back**: "On this day" became a strip of small tiles
+  that finds something on most days: your posts from this date in earlier
+  years, or one from the same week when a year has none, then one from six
+  months ago and one from a month ago. Only your own posts, picked by date.
+  Builds on [#413](https://github.com/jeffpaul/daymark/pull/413); from the
+  concepts for [#294](https://github.com/jeffpaul/daymark/issues/294).
+  ([#620](https://github.com/jeffpaul/daymark/pull/620))
 - [x] **Me v1**: identity, a link into Search scoped to the user's own Marks,
   a view-only Drafts list, and links out to Notifications, wp-admin
   Subscriptions, and WordPress's own profile/logout.
@@ -370,7 +377,9 @@ decision rows for the full technical record.
   — Explore gained a third section, "Bookmarks" (a link into Search preset
   to a reader's own saved items), as a side effect of the Bookmarks feature
   shipping, and an "On this day" memories section (prior-year same-date
-  Marks) arrived with the Search-filters PR ([#413](https://github.com/jeffpaul/daymark/pull/413)) —
+  Marks) arrived with the Search-filters PR ([#413](https://github.com/jeffpaul/daymark/pull/413)),
+  later widened into the "Look back" strip
+  ([#620](https://github.com/jeffpaul/daymark/pull/620)) —
   but highlights, collections, recently-popular, and suggested
   accounts/content all still need their own supporting data before they can
   be real sections.
