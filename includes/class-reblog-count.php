@@ -76,7 +76,7 @@ class Daymark_Reblog_Count {
 				'posts_per_page' => -1,
 				'fields'         => 'ids',
 				'no_found_rows'  => true,
-				'post__not_in'   => array( $post_id ),
+				'post__not_in'   => array( $post_id ), // phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.PostNotIn_post__not_in -- Leaves out one post, the Mark being counted for.
 				'meta_query'     => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Exact-match lookup, one per Mark card, at personal-site scale (same posture as Daymark_REST_Controller::find_own_mark_id_by_target_url()).
 					array(
 						'key'     => '_daymark_repost_of',

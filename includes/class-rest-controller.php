@@ -2423,7 +2423,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// reason. Y-m-d H:i:s (always GMT) sorts correctly as a
 				// plain string. Same-second posts in ID order, as above.
 				'orderby'        => array(
-					'meta_value' => 'DESC',
+					'meta_value' => 'DESC', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- An orderby key, not a value filter; see meta_key below.
 					'ID'         => 'DESC',
 				),
 				'meta_key'       => 'published_at', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Personal-site-scale Timeline merge.
@@ -6108,15 +6108,17 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		// One letter matches nearly every place, so wait for two.
 		if ( mb_strlen( $query ) >= 2 ) {
 			// A password-protected post's place stays out for anyone who
-			// couldn't read the post, as it does in Search's results.
-			$password_sql = current_user_can( 'edit_others_posts' ) ? '' : " AND p.post_password = ''";
+			// couldn't read the post, as it does in Search's results. The
+			// query takes that as a number (1 lets every post through), so
+			// no part of the SQL is built from a variable.
+			$sees_protected = current_user_can( 'edit_others_posts' ) ? 1 : 0;
 
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- A grouped count WP_Query can't express; one small read per pause in typing.
 			$rows = $wpdb->get_results(
 				$wpdb->prepare(
-					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $password_sql is one of two fixed strings.
-					"SELECT pm.meta_value AS name, COUNT(*) AS total FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE pm.meta_key = '_daymark_place_name' AND pm.meta_value LIKE %s AND p.post_type = 'post' AND p.post_status = 'publish'{$password_sql} GROUP BY pm.meta_value ORDER BY total DESC, name ASC LIMIT %d",
+					"SELECT pm.meta_value AS name, COUNT(*) AS total FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE pm.meta_key = '_daymark_place_name' AND pm.meta_value LIKE %s AND p.post_type = 'post' AND p.post_status = 'publish' AND ( 1 = %d OR p.post_password = '' ) GROUP BY pm.meta_value ORDER BY total DESC, name ASC LIMIT %d",
 					'%' . $wpdb->esc_like( $query ) . '%',
+					$sees_protected,
 					self::SEARCH_SUGGESTIONS_PER_KIND
 				)
 			);

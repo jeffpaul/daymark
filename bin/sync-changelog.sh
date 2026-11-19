@@ -23,6 +23,14 @@
 # on GitHub covers anyone who wants the rest. Bump MAX_VERSIONS, not this
 # comment, if that count ever needs to change.
 #
+# Fewer than MAX_VERSIONS are emitted when they would not fit: wordpress.org
+# shows at most 5,000 words of the changelog and cuts the rest off mid-entry
+# (it did, inside the fourth release, when 0.23.0 was first imported). So the
+# section holds the most recent whole releases that fit in MAX_WORDS, and
+# always the newest one, even if it is over the budget by itself. Plugin
+# Check fails the pull request in that last case (its readme check reports
+# any section wordpress.org would cut off).
+#
 # Usage:
 #   bin/sync-changelog.sh           # rewrite readme.txt in place
 #   bin/sync-changelog.sh --check   # exit 1 with a diff if readme.txt is stale (CI)
@@ -34,6 +42,9 @@ cd "$(dirname "$0")/.."
 CHANGELOG=CHANGELOG.md
 README=readme.txt
 MAX_VERSIONS=5
+# wordpress.org's limit is 5,000 (words are counted the way `wc -w` counts
+# them); the gap leaves room for a hand edit that adds a few.
+MAX_WORDS=4800
 FULL_CHANGELOG_URL="https://github.com/jeffpaul/daymark/blob/main/CHANGELOG.md"
 check_only=false
 
@@ -48,10 +59,10 @@ for f in "$CHANGELOG" "$README"; do
 done
 
 # Convert the released sections of CHANGELOG.md into readme.txt changelog markup.
-# Stops after MAX_VERSIONS version sections; the caller appends a link to the
-# full history on GitHub for anything older than that.
+# Stops after the number of version sections given as $1, then appends a link
+# to the full history on GitHub for anything older than that.
 changelog_body() {
-	awk -v max="$MAX_VERSIONS" '
+	awk -v max="$1" '
 		# Link-reference block ends the content we care about.
 		/^\[[^]]+\]:[[:space:]]/ { exit }
 
@@ -101,7 +112,15 @@ changelog_body() {
 
 # Splice the generated body between the Changelog and Upgrade Notice headings.
 render_readme() {
-	changelog_body > "$tmp_body"
+	# Start from MAX_VERSIONS and drop the oldest release until the section
+	# fits in MAX_WORDS. One release is always kept.
+	local count="$MAX_VERSIONS"
+	while :; do
+		changelog_body "$count" > "$tmp_body"
+		[ "$(wc -w < "$tmp_body")" -le "$MAX_WORDS" ] && break
+		[ "$count" -le 1 ] && break
+		count=$((count - 1))
+	done
 	awk -v body="$tmp_body" '
 		/^== Changelog ==$/ {
 			print

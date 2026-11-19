@@ -20,6 +20,14 @@ can't act on them.
 
 ## [Unreleased]
 
+### Fixed
+
+- Daymark's page on wordpress.org no longer cuts off its description and its changelog. Both were longer than wordpress.org shows, so the list of outside services stopped partway through and the changelog stopped inside an older release. The details of what your site sends to sites you follow now sit in the FAQ, and the changelog lists the three most recent releases.
+
+### Developer
+
+- Plugin Check warnings now fail a pull request, where before only its errors did. The 25 warnings it had were cleared first, among them upgrade notices over 300 characters, and the readme changelog now keeps only the recent releases that fit.
+
 ## [0.23.0] - 2026-11-19
 
 Daymark 0.23.0 makes the app feel more like the social apps you already know, while everything you post still lives on your own site first. You can crop or turn a photo and set a Mark to publish later, and Publish is now the composer's one big button. Explore and Search are one tab that finds people, tags and places, Notifications has its own tab in the bottom bar, and Me opens with a calendar of the days you published on and a card of the places your Marks are shared. Following friends' own sites gets easier too: Explore suggests sites from people already around yours, and a reading list kept on a Microsub server can be brought in.

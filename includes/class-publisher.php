@@ -1747,7 +1747,7 @@ class Daymark_Publisher {
 			return self::with_audio_file_type( $path, $content_mime, static fn() => media_handle_sideload( $file, $post_id ) );
 		} finally {
 			if ( null !== $memory_limit ) {
-				ini_set( 'memory_limit', $memory_limit ); // phpcs:ignore WordPress.PHP.IniSet.memory_limit_Disallowed -- Restores the limit cap_unlimited_memory() replaced.
+				ini_set( 'memory_limit', $memory_limit ); // phpcs:ignore WordPress.PHP.IniSet.memory_limit_Disallowed, Squiz.PHP.DiscouragedFunctions.Discouraged -- Restores the limit cap_unlimited_memory() replaced.
 			}
 		}
 	}
@@ -1769,7 +1769,7 @@ class Daymark_Publisher {
 
 		$megabytes = max( 512, (int) ceil( ( memory_get_usage( true ) + 256 * MB_IN_BYTES ) / MB_IN_BYTES ) );
 
-		if ( false === ini_set( 'memory_limit', $megabytes . 'M' ) ) { // phpcs:ignore WordPress.PHP.IniSet.memory_limit_Disallowed -- wp_raise_memory_limit() never lowers an unlimited limit; see sideload_file().
+		if ( false === ini_set( 'memory_limit', $megabytes . 'M' ) ) { // phpcs:ignore WordPress.PHP.IniSet.memory_limit_Disallowed, Squiz.PHP.DiscouragedFunctions.Discouraged -- wp_raise_memory_limit() never lowers an unlimited limit; see sideload_file().
 			return null;
 		}
 
@@ -2788,7 +2788,7 @@ class Daymark_Publisher {
 				'post_type'      => 'post',
 				'post_status'    => 'publish',
 				'author'         => $user_id,
-				'post__not_in'   => array( $post_id ),
+				'post__not_in'   => array( $post_id ), // phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.PostNotIn_post__not_in -- Leaves out one post, the Mark just published.
 				'meta_key'       => '_daymark_is_mark', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- one lookup per person, ever.
 				'meta_value'     => '1', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- same.
 				'posts_per_page' => 1,
