@@ -233,10 +233,14 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 == Screenshots ==
 
-1. Home — the phone-first app shell: your Timeline, a count of your drafts, one-tap publishing.
-2. Create — pick media, add a caption, and get AI-suggested alt text for each image, editable before you publish.
-3. Publish — your site is always the destination; file the Mark under categories (remembered per type), or save as a draft.
-4. Notifications — replies from syndicated copies flow back automatically, labeled by source.
+1. Timeline — your friends' posts and your own in one feed, newest first, with no algorithm and no ads.
+2. New Mark — add photos and a caption, see where it goes (your site first, then the networks you've connected), and tap Publish.
+3. A friend's post — read it in full, then like, comment, reblog, or bookmark it without leaving the app.
+4. Explore — search everything, see who posted lately, browse your tags, look back at this time in past years, and find sites you might follow.
+5. Notifications — replies, likes, and reblogs from other sites, Mastodon, and Bluesky, each labeled by where it came from.
+6. Me — your drafts and "Your days", a calendar of the days you published on.
+7. Follow a site — enter a site's address, pick a feed, and its new posts show up in your Timeline.
+8. Settings -> Daymark — scan the code to open Daymark on your phone, and add the plugins that carry your posts to the fediverse and Bluesky.
 
 == Changelog ==
 
