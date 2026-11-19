@@ -108,7 +108,11 @@ the repo is symlinked into a WordPress install as `wp-content/plugins/daymark`.
 | `docs/` | Product/spec documents (excluded from the distributed plugin) |
 
 `.distignore` controls what is excluded from the built plugin zip (tests,
-tooling, and docs are all excluded).
+tooling, and docs are all excluded). `.gitattributes` does the same for the
+"Source code" archives GitHub builds for each tag. A new development-only file
+at the repo root goes in both lists; `bin/check-dist.sh` fails when the two
+would ship different files, or when a Markdown file would ship at the top of
+the plugin, and CI runs it.
 
 ## Development setup
 
