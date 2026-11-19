@@ -72,6 +72,8 @@ can't act on them.
 
 - A release now goes to the wordpress.org plugin directory by itself. Pushing a version tag still builds the zip and publishes the GitHub release, and the same run then sends that version, with the banner, icon and screenshots, to wordpress.org. ([#628](https://github.com/jeffpaul/daymark/pull/628))
 
+- The plugin no longer carries RECOVERY.md, an old project note that had shipped in every release since August, and the file is gone from the repository. GitHub's source downloads now leave out DEPENDENCIES.md, as the plugin zip already did, and a new check fails when the two would ship different files or a stray Markdown file. ([#627](https://github.com/jeffpaul/daymark/pull/627))
+
 ## [0.22.0] - 2026-11-05
 
 Daymark 0.22.0 makes posting from your phone to your own site feel more like a social app: Publish now sits on the composer, you can record sound right there, and photos show as a tidy strip with alt-text badges. Your site keeps the original, and each Mark now lists the copies your sharing plugins posted to other networks, so replies there can find their way back home (what the IndieWeb calls POSSE). Following friends' own sites gets easier too, with a "Follow me with Daymark" block, replies on posts you follow, and a plain reason whenever a Like or Comment can't reach a site. This release also includes five security fixes, so update when you can.
