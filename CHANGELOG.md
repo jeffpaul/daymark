@@ -34,6 +34,7 @@ can't act on them.
 
 ### Changed
 
+- Daymark's wordpress.org page has eight new screenshots in place of four that showed screens the app no longer has: the Timeline with friends' posts, the composer, an open post, Explore, Notifications, Me, Follow a site, and the settings page. The README now shows three of them too. ([#625](https://github.com/jeffpaul/daymark/pull/625))
 - Explore and Search are now one tab. Search sits at the top with a Bookmarks button beside it, and under it are your recent searches, the people you follow (whoever posted last comes first), your most-used tags and On this day. The tab's icon is a magnifying glass with the compass needle inside. ([#615](https://github.com/jeffpaul/daymark/pull/615), [#618](https://github.com/jeffpaul/daymark/pull/618))
 - On Explore, "On this day" is now "Look back": a strip of small tiles you swipe through. It still shows your posts from this date in earlier years, and now adds one from the same week in a year that has none on the date itself, one from six months ago and one from a month ago, so there is something to find on most days. Tap a tile to open the post. Builds on the "On this day" section yusuf-saif added in [#413](https://github.com/jeffpaul/daymark/pull/413). ([#620](https://github.com/jeffpaul/daymark/pull/620))
 - Notifications is now a tab in the bottom bar, where Search used to be, and it shows a mark when something new is waiting. The bell is gone from the top of each screen. ([#615](https://github.com/jeffpaul/daymark/pull/615))
