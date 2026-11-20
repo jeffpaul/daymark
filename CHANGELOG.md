@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- The New Mark button in the bottom bar now shows "New Mark" when you hover over it with a mouse, the same way the Timeline, Explore, Notifications and Me tabs show their names. ([#634](https://github.com/jeffpaul/daymark/pull/634))
+
 ### Changed
 
 - Settings -> Daymark -> General now has one "Save changes" button at the bottom, in place of a Save button in each of its eight sections. One press saves everything on the page, so a change in one section is no longer lost by pressing Save in another. ([#635](https://github.com/jeffpaul/daymark/pull/635))
