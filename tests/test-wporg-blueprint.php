@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for the wordpress.org Live Preview blueprint and its made-up friends.
+ * Tests for the wordpress.org Live Preview blueprint.
  *
  * @package Daymark
  */
@@ -8,17 +8,10 @@
 /**
  * The plugin page's Live Preview runs `.wordpress-org/blueprints/blueprint.json`
  * (SVN `assets/blueprints/blueprint.json`). These tests hold it to what
- * wordpress.org accepts, and run the made-up friends it follows for real,
- * with every other outbound request refused.
+ * wordpress.org accepts, and to the same demo content as the README's
+ * "Try it" demo (`.github/blueprints/blueprint.json`).
  */
 class Test_Wporg_Blueprint extends WP_UnitTestCase {
-
-	/**
-	 * Requests that reached the network filter without an answer.
-	 *
-	 * @var string[]
-	 */
-	private $unanswered = array();
 
 	/**
 	 * Path to a file in the repository.
@@ -64,90 +57,6 @@ class Test_Wporg_Blueprint extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Where the blueprint puts the demo files on the preview site.
-	 *
-	 * @return string
-	 */
-	private static function demo_dir(): string {
-		return WP_CONTENT_DIR . '/daymark-demo';
-	}
-
-	/**
-	 * Remove the copied demo files.
-	 *
-	 * @return void
-	 */
-	public static function tear_down_after_class() {
-		$dir = self::demo_dir();
-
-		if ( is_dir( $dir ) ) {
-			foreach ( array_merge( (array) glob( $dir . '/sample-images/*' ), (array) glob( $dir . '/*.*' ) ) as $file ) {
-				unlink( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink -- Test fixture cleanup.
-			}
-
-			rmdir( $dir . '/sample-images' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Test fixture cleanup.
-			rmdir( $dir ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Test fixture cleanup.
-		}
-
-		parent::tear_down_after_class();
-	}
-
-	/**
-	 * Lay the demo files out as the blueprint does (a copy of
-	 * `.github/blueprints/` in `wp-content/daymark-demo/`), load the made-up
-	 * friends from there, and put their answering filter back (the test
-	 * framework resets hooks between tests, and the file only loads once).
-	 *
-	 * @return void
-	 */
-	private function load_friends(): void {
-		$source = $this->repo_path( '.github/blueprints' );
-		$dir    = self::demo_dir();
-
-		if ( ! is_dir( $dir . '/sample-images' ) ) {
-			wp_mkdir_p( $dir . '/sample-images' );
-
-			foreach ( array_merge( (array) glob( $source . '/*.*' ), (array) glob( $source . '/sample-images/*' ) ) as $file ) {
-				copy( $file, $dir . substr( $file, strlen( $source ) ) );
-			}
-		}
-
-		$first_load = ! function_exists( 'daymark_sample_friends_answer' );
-
-		require_once $dir . '/sample-friends.php';
-
-		if ( $first_load ) {
-			// On the preview site nothing else attaches the filter, so the
-			// file has to do it itself when it is loaded.
-			$this->assertSame( 1, has_filter( 'pre_http_request', 'daymark_sample_friends_answer' ) );
-		} else {
-			add_filter( 'pre_http_request', 'daymark_sample_friends_answer', 1, 3 );
-		}
-
-		add_filter( 'pre_http_request', array( $this, 'refuse_unanswered' ), 99, 3 );
-	}
-
-	/**
-	 * Refuse, and remember, any request the made-up friends did not answer.
-	 *
-	 * @param false|array|WP_Error $preempt The answer so far.
-	 * @param array                $args    Request arguments.
-	 * @param string               $url     Request URL.
-	 * @return array|WP_Error
-	 */
-	public function refuse_unanswered( $preempt, $args, $url ) {
-		unset( $args );
-
-		if ( false !== $preempt ) {
-			return $preempt;
-		}
-
-		$this->unanswered[] = (string) $url;
-
-		return new WP_Error( 'blocked', 'Outbound requests are blocked in this test.' );
-	}
-
-	/**
 	 * Wordpress.org reads one file, `blueprint.json`, skips it when it is not
 	 * valid JSON, and skips it when it is over 100 KB.
 	 */
@@ -183,160 +92,88 @@ class Test_Wporg_Blueprint extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The demo files come from this repository's `.github/blueprints/`
-	 * folder, and the blueprint names files that are really there.
+	 * The released plugin does not carry the demo files, so the blueprint
+	 * copies this repository's `.github/blueprints/` folder onto the preview
+	 * site and runs the sample-content script from the copy.
 	 */
 	public function test_blueprint_reads_demo_files_that_exist(): void {
-		$from_git = array_values(
-			array_filter(
-				$this->steps( 'writeFiles' ),
-				static function ( $step ) {
-					return 'git:directory' === ( $step['filesTree']['resource'] ?? '' );
-				}
-			)
-		);
+		$writes = $this->steps( 'writeFiles' );
 
-		$this->assertCount( 1, $from_git );
-		$this->assertSame( 'https://github.com/jeffpaul/daymark', $from_git[0]['filesTree']['url'] );
-		$this->assertSame( 'main', $from_git[0]['filesTree']['ref'] );
-		$this->assertSame( '.github/blueprints', $from_git[0]['filesTree']['path'] );
-		$this->assertSame( '/wordpress/wp-content/daymark-demo', $from_git[0]['writeToPath'] );
-
-		$encoded = (string) wp_json_encode( $this->blueprint(), JSON_UNESCAPED_SLASHES );
-
-		foreach ( array( 'sample-friends.php', 'seed-sample-content.php' ) as $file ) {
-			$this->assertStringContainsString( "/daymark-demo/$file", $encoded );
-			$this->assertFileExists( $this->repo_path( ".github/blueprints/$file" ) );
-		}
+		$this->assertCount( 1, $writes );
+		$this->assertSame( 'git:directory', $writes[0]['filesTree']['resource'] );
+		$this->assertSame( 'https://github.com/jeffpaul/daymark', $writes[0]['filesTree']['url'] );
+		$this->assertSame( 'main', $writes[0]['filesTree']['ref'] );
+		$this->assertSame( '.github/blueprints', $writes[0]['filesTree']['path'] );
+		$this->assertSame( '/wordpress/wp-content/daymark-demo', $writes[0]['writeToPath'] );
 
 		$run = $this->steps( 'runPHP' );
 
 		$this->assertCount( 1, $run );
-		$this->assertStringContainsString( 'daymark_sample_friends_follow()', (string) $run[0]['code'] );
+		$this->assertStringContainsString( "WP_CONTENT_DIR . '/daymark-demo/seed-sample-content.php'", (string) $run[0]['code'] );
+		$this->assertFileExists( $this->repo_path( '.github/blueprints/seed-sample-content.php' ) );
+
+		// The copy has to be in place before the step that runs it.
+		$order = array_column( (array) $this->blueprint()['steps'], 'step' );
+
+		$this->assertLessThan( array_search( 'runPHP', $order, true ), array_search( 'writeFiles', $order, true ) );
+		$this->assertLessThan( array_search( 'runPHP', $order, true ), array_search( 'installPlugin', $order, true ) );
 	}
 
 	/**
-	 * The friends are made up: every address is under `.example`, which is
-	 * reserved and can never belong to a real person, and every picture and
-	 * avatar they use is in the repository.
+	 * The preview follows the same sites, under the same names and in the
+	 * same way, as the README's "Try it" demo. The two files each carry
+	 * the list, so this fails when one is changed without the other.
 	 */
-	public function test_friends_are_made_up_and_their_pictures_exist(): void {
-		$this->load_friends();
-
-		$friends = daymark_sample_friends();
-
-		$this->assertCount( 4, $friends );
-
-		foreach ( $friends as $host => $friend ) {
-			$this->assertStringEndsWith( '.example', $host );
-			$this->assertFileExists( $this->repo_path( '.github/blueprints/sample-images/' . $friend['icon'] ) );
-
-			foreach ( $friend['posts'] as $post ) {
-				foreach ( $post['images'] as $image ) {
-					$this->assertFileExists( $this->repo_path( ".github/blueprints/sample-images/$image.jpg" ) );
-				}
-			}
-		}
-	}
-
-	/**
-	 * Following the friends goes through Daymark's own follow and read
-	 * steps and fills the Timeline, with no request leaving the site.
-	 */
-	public function test_following_the_friends_fills_the_timeline(): void {
-		$this->load_friends();
-
-		$this->assertSame( 4, daymark_sample_friends_follow() );
-		$this->assertSame( 0, daymark_sample_friends_follow(), 'A second run follows nobody twice.' );
-
-		$subscriptions = Daymark_Plugin::instance()->subscriptions->get_active();
-		$titles        = wp_list_pluck( $subscriptions, 'site_title' );
-
-		$this->assertEqualsCanonicalizing( array( 'Sarah Chen', 'Ana Ruiz', 'Marcus Webb', 'Priya Nair' ), $titles );
-
-		foreach ( $subscriptions as $subscription ) {
-			$this->assertSame( 'feed', $subscription['source_type'] );
-			$this->assertStringStartsWith( content_url( '/daymark-demo/sample-images/friend-' ), (string) $subscription['site_icon_url'] );
-			$this->assertSame( 0, (int) $subscription['consecutive_failure_count'] );
-		}
-
-		$posts = get_posts(
-			array(
-				'post_type'      => Daymark_Subscription_Post_Type::POST_TYPE,
-				'post_status'    => 'publish',
-				'posts_per_page' => -1,
-			)
+	public function test_blueprint_follows_the_same_sites_as_the_readme_demo(): void {
+		$readme = json_decode(
+			(string) file_get_contents( $this->repo_path( '.github/blueprints/blueprint.json' ) ), // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local repository file.
+			true
 		);
 
-		$this->assertCount( 8, $posts );
+		$this->assertIsArray( $readme );
 
-		$formats = array();
+		$readme_code = '';
 
-		foreach ( $posts as $post ) {
-			$format    = (string) get_post_meta( $post->ID, 'post_format', true );
-			$formats[] = $format;
-
-			// Pictures come from this site: a made-up address serves none.
-			if ( 'standard' !== $format ) {
-				$this->assertStringStartsWith( content_url( '/daymark-demo/sample-images/' ), (string) get_post_meta( $post->ID, 'featured_image_url', true ) );
+		foreach ( (array) $readme['steps'] as $step ) {
+			if ( 'runPHP' === ( $step['step'] ?? '' ) ) {
+				$readme_code = (string) $step['code'];
 			}
-
-			if ( 'gallery' === $format ) {
-				$this->assertCount( 3, Daymark_Subscription_Poller::gallery_images_for( $post->ID ) );
-			}
-
-			$this->assertStringContainsString( '.example/', (string) get_post_meta( $post->ID, 'permalink', true ) );
-			$this->assertNotSame( '', $post->post_excerpt );
-			$this->assertLessThan( time(), strtotime( (string) get_post_meta( $post->ID, 'published_at', true ) . ' UTC' ) );
 		}
 
-		$counts = array_count_values( $formats );
+		$code   = (string) $this->steps( 'runPHP' )[0]['code'];
+		$ours   = $this->follow_code( $code );
+		$theirs = $this->follow_code( $readme_code );
 
-		$this->assertSame( 2, $counts['image'] ?? 0, 'two photo posts' );
-		$this->assertSame( 1, $counts['gallery'] ?? 0, 'one gallery' );
-		$this->assertSame( 5, $counts['standard'] ?? 0, 'five written posts' );
-
-		$this->assertSame( array(), $this->unanswered, 'No request should leave the site.' );
+		$this->assertNotSame( '', $theirs );
+		$this->assertSame( $theirs, $ours );
+		$this->assertSame( 4, substr_count( $ours, "'https://" ) );
+		$this->assertStringContainsString( 'subscribe_to_site( $site_url )', $ours );
+		$this->assertStringContainsString( 'poll_subscription(', $ours );
 	}
 
 	/**
-	 * Opening a friend's post reads its page, and refreshing reads the feed
-	 * again without adding a post twice.
+	 * A new WordPress comes with a "Hello world!" post, which would sit at
+	 * the top of the Timeline. The blueprint takes it out.
 	 */
-	public function test_a_friends_post_opens_and_a_refresh_adds_nothing(): void {
-		$this->load_friends();
-		daymark_sample_friends_follow();
+	public function test_blueprint_removes_the_hello_world_post(): void {
+		$code = (string) $this->steps( 'runPHP' )[0]['code'];
 
-		$plugin = Daymark_Plugin::instance();
-		$posts  = get_posts(
-			array(
-				'post_type'      => Daymark_Subscription_Post_Type::POST_TYPE,
-				'posts_per_page' => 1,
-				'title'          => 'What a year of Sunday bread taught me',
-			)
-		);
-
-		$this->assertCount( 1, $posts );
-		$this->assertTrue( $plugin->subscription_poller->fetch_full_content( $posts[0]->ID ) );
-		$this->assertSame( 'full', get_post_meta( $posts[0]->ID, 'content_state', true ) );
-		$this->assertStringContainsString( 'Fifty-two loaves', (string) get_post_meta( $posts[0]->ID, 'body_content', true ) );
-		$this->assertStringNotContainsString( '<h1', (string) get_post_meta( $posts[0]->ID, 'body_content', true ) );
-
-		foreach ( $plugin->subscriptions->get_active() as $subscription ) {
-			$this->assertTrue( $plugin->subscription_poller->poll_subscription( (int) $subscription['id'] ) );
-		}
-
-		$this->assertSame( 8, (int) wp_count_posts( Daymark_Subscription_Post_Type::POST_TYPE )->publish );
-		$this->assertSame( array(), $this->unanswered, 'No request should leave the site.' );
+		$this->assertStringContainsString( "get_page_by_path( 'hello-world', OBJECT, 'post' )", $code );
+		$this->assertStringContainsString( 'wp_delete_post( $hello->ID, true )', $code );
 	}
 
 	/**
-	 * A request to any other address is left alone.
+	 * The part of a blueprint's PHP that lists the sites and follows them:
+	 * from the list to the end of the loop over it.
+	 *
+	 * @param string $code A `runPHP` step's code.
+	 * @return string The code, or an empty string when it is not there.
 	 */
-	public function test_other_addresses_are_not_answered(): void {
-		$this->load_friends();
+	private function follow_code( string $code ): string {
+		if ( ! preg_match( '/\$preset_sites = \[.*?\n\];.*?\nforeach \( \$preset_sites as .*?\n}\n/s', $code, $match ) ) {
+			return '';
+		}
 
-		$this->assertFalse( daymark_sample_friends_answer( false, array(), 'https://wordpress.org/news/feed/' ) );
-		$this->assertSame( 404, daymark_sample_friends_answer( false, array(), 'https://sarahchen.example/wp-json/' )['response']['code'] );
+		return $match[0];
 	}
 }

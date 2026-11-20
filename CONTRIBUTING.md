@@ -589,13 +589,11 @@ The preview:
   request's preview button install from this repository instead, and use
   `.github/blueprints/blueprint.json`.)
 - **Copies `.github/blueprints/` from `main`** into the preview site for its
-  demo content: `seed-sample-content.php` publishes the sample Marks, and
-  `sample-friends.php` gives the Timeline four people to follow.
-- **Follows nobody real.** The four friends are made up, on `.example`
-  addresses that can never belong to anyone. `sample-friends.php` answers the
-  requests WordPress would send to those addresses itself, so following,
-  refreshing and opening a post work with no network. Keep it that way: no
-  real person's name or site belongs in the public preview.
+  demo content, because the released plugin does not carry that folder:
+  `seed-sample-content.php` publishes the sample Marks from there.
+- **Follows the same four sites as the README demo.** The list of sites is
+  written out in both `blueprint.json` files, so change them together
+  (`tests/test-wporg-blueprint.php` fails when they differ).
 
 Things to know:
 
@@ -603,7 +601,9 @@ Things to know:
   preview reads `main`, and it runs against the last release, which may be
   older than your change. The *Live Preview blueprint* workflow runs exactly
   that combination in Playground on any pull request that touches these
-  files, and fails if the preview would come up without its content.
+  files, and fails if the preview would come up without its sample Marks.
+  It only warns when one of the four followed sites did not answer, since a
+  pull request cannot fix someone else's site.
 - **A change to `blueprint.json` itself waits for the next release**, like any
   other wordpress.org asset. To publish one sooner, commit that one file to
   SVN `assets/blueprints/` by hand.

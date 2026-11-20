@@ -2,7 +2,7 @@
   "$schema": "https://playground.wordpress.net/blueprint-schema.json",
   "meta": {
     "title": "Daymark",
-    "description": "Try Daymark in a throwaway WordPress. Opens the Daymark app with sample Marks and four made-up friends to follow.",
+    "description": "Try Daymark in a throwaway WordPress. Opens the Daymark app with sample Marks and four sites already followed.",
     "author": "jeffpaul"
   },
   "preferredVersions": {
@@ -43,19 +43,8 @@
       }
     },
     {
-      "step": "writeFiles",
-      "writeToPath": "/wordpress/wp-content/mu-plugins",
-      "filesTree": {
-        "resource": "literal:directory",
-        "name": "mu-plugins",
-        "files": {
-          "daymark-demo.php": "<?php\n/**\n * Daymark Live Preview: loads the made-up friends the preview follows.\n * See .github/blueprints/sample-friends.php in the Daymark repository.\n */\nif ( file_exists( WP_CONTENT_DIR . '/daymark-demo/sample-friends.php' ) ) {\n\trequire_once WP_CONTENT_DIR . '/daymark-demo/sample-friends.php';\n}\n"
-        }
-      }
-    },
-    {
       "step": "runPHP",
-      "code": "<?php\nrequire_once '/wordpress/wp-load.php';\n\nif ( ! class_exists( 'Daymark_Plugin' ) ) {\n\treturn;\n}\n\n// A new WordPress comes with a \"Hello world!\" post. Take it out, so the\n// Timeline opens on the demo.\n$hello = get_page_by_path( 'hello-world', OBJECT, 'post' );\nif ( $hello instanceof WP_Post ) {\n\twp_delete_post( $hello->ID, true );\n}\n\n// Follow the made-up friends and read their posts.\nif ( function_exists( 'daymark_sample_friends_follow' ) ) {\n\tdaymark_sample_friends_follow();\n}\n\n// Sample Marks, one for each Mark type and Featured Content kind.\n$seed = WP_CONTENT_DIR . '/daymark-demo/seed-sample-content.php';\nif ( file_exists( $seed ) ) {\n\trequire $seed;\n}\n"
+      "code": "<?php\nrequire_once '/wordpress/wp-load.php';\n\nif ( ! class_exists( 'Daymark_Plugin' ) ) {\n\treturn;\n}\n\n$plugin = Daymark_Plugin::instance();\n\n// A new WordPress comes with a \"Hello world!\" post. Take it out, so the\n// Timeline opens on the demo.\n$hello = get_page_by_path( 'hello-world', OBJECT, 'post' );\nif ( $hello instanceof WP_Post ) {\n\twp_delete_post( $hello->ID, true );\n}\n\n// The same four sites the README's \"Try it\" demo follows\n// (.github/blueprints/blueprint.json). Keep the two lists the same.\n$preset_sites = [\n\t'https://jeffpaul.com'    => 'Jeffrey Paul',\n\t'https://jondesrosiers.com' => '',\n\t'https://aaron.jorb.in'  => 'Aaron Jorbin',\n\t'https://xkcd.com'        => 'xkcd',\n];\n\nforeach ( $preset_sites as $site_url => $site_name ) {\n\t$result = $plugin->subscriptions->subscribe_to_site( $site_url );\n\tif ( ! is_wp_error( $result ) ) {\n\t\tif ( '' !== $site_name ) {\n\t\t\t$plugin->subscriptions->update( (int) $result, [ 'site_title' => $site_name ] );\n\t\t}\n\t\t$plugin->subscription_poller->poll_subscription( (int) $result );\n\t}\n}\n\n// Sample Marks, one for each Mark type and Featured Content kind. The\n// released plugin does not carry the script, so an earlier step copied it\n// (and the sample photos next to it) here.\n$seed = WP_CONTENT_DIR . '/daymark-demo/seed-sample-content.php';\nif ( file_exists( $seed ) ) {\n\trequire $seed;\n}\n"
     }
   ]
 }
