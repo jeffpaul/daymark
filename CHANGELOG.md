@@ -26,6 +26,7 @@ can't act on them.
 
 ### Changed
 
+- Settings -> Daymark -> General now has one "Save changes" button at the bottom, in place of a Save button in each of its eight sections. One press saves everything on the page, so a change in one section is no longer lost by pressing Save in another. ([#635](https://github.com/jeffpaul/daymark/pull/635))
 - The font setting in Settings -> Daymark -> General now lists every font in your site's Font Library, both the ones you added and the ones your theme brings. Pick one and the Daymark app shows its text in it. ([#638](https://github.com/jeffpaul/daymark/pull/638))
 
 ### Removed

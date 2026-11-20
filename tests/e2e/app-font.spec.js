@@ -22,8 +22,9 @@ async function loginAs( page ) {
 async function chooseFont( page, value ) {
 	await page.goto( GENERAL_TAB );
 	await page.selectOption( '#daymark-app-font', value );
-	await page.click( '#daymark-app-font-submit' );
-	await expect( page.locator( '.notice' ).filter( { hasText: 'Font saved.' } ) ).toBeVisible();
+	// The General tab's one Save button.
+	await page.getByRole( 'button', { name: 'Save changes' } ).click();
+	await expect( page.locator( '.notice' ).filter( { hasText: 'Settings saved.' } ) ).toBeVisible();
 }
 
 // What the app's text is set in: the --daymark-font list on <html>, and

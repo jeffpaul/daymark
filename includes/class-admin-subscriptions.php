@@ -188,16 +188,9 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_microsub_import_cancel', array( $this, 'handle_microsub_import_cancel' ) );
 		add_action( 'admin_post_daymark_privacy_save', array( $this, 'handle_privacy_save' ) );
 		add_action( 'admin_post_daymark_bridgy_fed_save', array( $this, 'handle_bridgy_fed_save' ) );
-		add_action( 'admin_post_daymark_blogroll_save', array( $this, 'handle_blogroll_save' ) );
-		add_action( 'admin_post_daymark_notes_save', array( $this, 'handle_notes_save' ) );
-		add_action( 'admin_post_daymark_app_font_save', array( $this, 'handle_app_font_save' ) );
-		add_action( 'admin_post_daymark_timeline_display_save', array( $this, 'handle_timeline_display_save' ) );
-		add_action( 'admin_post_daymark_announce_follows_save', array( $this, 'handle_announce_follows_save' ) );
-		add_action( 'admin_post_daymark_app_badge_save', array( $this, 'handle_app_badge_save' ) );
-		add_action( 'admin_post_daymark_publishing_defaults_save', array( $this, 'handle_publishing_defaults_save' ) );
+		add_action( 'admin_post_daymark_general_save', array( $this, 'handle_general_save' ) );
 		add_action( 'admin_post_daymark_links_import', array( $this, 'handle_links_import' ) );
 		add_action( 'admin_post_daymark_subscriptions_bulk', array( $this, 'handle_bulk' ) );
-		add_action( 'admin_post_daymark_subscription_poll_interval_save', array( $this, 'handle_poll_interval_save' ) );
 	}
 
 	/**
@@ -715,26 +708,35 @@ class Daymark_Admin_Subscriptions {
 	 * where Notes show on the site, how the app lists posts, and whether
 	 * the app icon shows an unread count.
 	 *
+	 * Every setting sits in one form with one Save button at the bottom
+	 * (handle_general_save()), so each render_*_form() method below prints
+	 * its section's fields only.
+	 *
 	 * @return void
 	 */
 	private function render_general_tab(): void {
 		?>
 		<?php $this->render_open_on_phone(); ?>
 		<?php $this->render_bookmarklet(); ?>
-		<h2><?php esc_html_e( 'Sites you follow', 'daymark' ); ?></h2>
-		<?php $this->render_poll_interval_form(); ?>
-		<?php $this->render_blogroll_form(); ?>
-		<?php $this->render_announce_follows_form(); ?>
-		<h2><?php esc_html_e( 'New Marks', 'daymark' ); ?></h2>
-		<?php $this->render_publishing_defaults_form(); ?>
-		<h2><?php esc_html_e( 'Notes', 'daymark' ); ?></h2>
-		<?php $this->render_notes_form(); ?>
-		<h2><?php esc_html_e( 'Font', 'daymark' ); ?></h2>
-		<?php $this->render_app_font_form(); ?>
-		<h2><?php esc_html_e( 'Timeline', 'daymark' ); ?></h2>
-		<?php $this->render_timeline_display_form(); ?>
-		<h2><?php esc_html_e( 'App icon', 'daymark' ); ?></h2>
-		<?php $this->render_app_badge_form(); ?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_general_save" />
+			<?php wp_nonce_field( 'daymark_general_save', 'daymark_general_save_nonce' ); ?>
+			<h2><?php esc_html_e( 'Sites you follow', 'daymark' ); ?></h2>
+			<?php $this->render_poll_interval_form(); ?>
+			<?php $this->render_blogroll_form(); ?>
+			<?php $this->render_announce_follows_form(); ?>
+			<h2><?php esc_html_e( 'New Marks', 'daymark' ); ?></h2>
+			<?php $this->render_publishing_defaults_form(); ?>
+			<h2><?php esc_html_e( 'Notes', 'daymark' ); ?></h2>
+			<?php $this->render_notes_form(); ?>
+			<h2><?php esc_html_e( 'Font', 'daymark' ); ?></h2>
+			<?php $this->render_app_font_form(); ?>
+			<h2><?php esc_html_e( 'Timeline', 'daymark' ); ?></h2>
+			<?php $this->render_timeline_display_form(); ?>
+			<h2><?php esc_html_e( 'App icon', 'daymark' ); ?></h2>
+			<?php $this->render_app_badge_form(); ?>
+			<?php submit_button( __( 'Save changes', 'daymark' ) ); ?>
+		</form>
 		<?php
 	}
 
@@ -913,37 +915,32 @@ class Daymark_Admin_Subscriptions {
 				<?php esc_html_e( 'A type with no category ticked is filed under your site\'s default category.', 'daymark' ); ?>
 			<?php endif; ?>
 		</p>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-			<input type="hidden" name="action" value="daymark_publishing_defaults_save" />
-			<?php wp_nonce_field( 'daymark_publishing_defaults_save', 'daymark_publishing_defaults_save_nonce' ); ?>
-			<table class="widefat striped" style="max-width:56em;margin-top:1em;">
-				<thead>
+		<table class="widefat striped" style="max-width:56em;margin-top:1em;">
+			<thead>
+				<tr>
+					<th scope="col"><?php esc_html_e( 'Type', 'daymark' ); ?></th>
+					<?php if ( ! empty( $connectors ) ) : ?>
+						<th scope="col"><?php esc_html_e( 'Share to', 'daymark' ); ?></th>
+					<?php endif; ?>
+					<?php if ( ! empty( $categories ) ) : ?>
+						<th scope="col"><?php esc_html_e( 'File under', 'daymark' ); ?></th>
+					<?php endif; ?>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ( self::publishing_types() as $type => $label ) : ?>
 					<tr>
-						<th scope="col"><?php esc_html_e( 'Type', 'daymark' ); ?></th>
+						<th scope="row"><?php echo esc_html( $label ); ?></th>
 						<?php if ( ! empty( $connectors ) ) : ?>
-							<th scope="col"><?php esc_html_e( 'Share to', 'daymark' ); ?></th>
+							<td><?php $this->render_destination_defaults_cell( $type, $label, $connectors ); ?></td>
 						<?php endif; ?>
 						<?php if ( ! empty( $categories ) ) : ?>
-							<th scope="col"><?php esc_html_e( 'File under', 'daymark' ); ?></th>
+							<td><?php $this->render_category_defaults_cell( $type, $label, $categories ); ?></td>
 						<?php endif; ?>
 					</tr>
-				</thead>
-				<tbody>
-					<?php foreach ( self::publishing_types() as $type => $label ) : ?>
-						<tr>
-							<th scope="row"><?php echo esc_html( $label ); ?></th>
-							<?php if ( ! empty( $connectors ) ) : ?>
-								<td><?php $this->render_destination_defaults_cell( $type, $label, $connectors ); ?></td>
-							<?php endif; ?>
-							<?php if ( ! empty( $categories ) ) : ?>
-								<td><?php $this->render_category_defaults_cell( $type, $label, $categories ); ?></td>
-							<?php endif; ?>
-						</tr>
-					<?php endforeach; ?>
-				</tbody>
-			</table>
-			<?php submit_button( __( 'Save defaults', 'daymark' ) ); ?>
-		</form>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
 		<?php
 	}
 
@@ -1314,23 +1311,16 @@ class Daymark_Admin_Subscriptions {
 		}
 
 		$success_messages = array(
-			'unsubscribed'              => __( 'Unsubscribed.', 'daymark' ),
-			'refreshed'                 => __( 'Refresh requested.', 'daymark' ),
-			'icon_refreshed'            => __( 'Site icon refreshed.', 'daymark' ),
-			'title_updated'             => __( 'Site name updated.', 'daymark' ),
-			'favorited'                 => __( 'Starred as favorite.', 'daymark' ),
-			'unfavorited'               => __( 'Removed from favorites.', 'daymark' ),
-			'privacy_saved'             => __( 'Data & privacy settings saved.', 'daymark' ),
-			'blogroll_saved'            => __( 'Blogroll setting saved.', 'daymark' ),
-			'notes_saved'               => __( 'Notes setting saved.', 'daymark' ),
-			'app_font_saved'            => __( 'Font saved.', 'daymark' ),
-			'timeline_display_saved'    => __( 'Timeline setting saved.', 'daymark' ),
-			'announce_follows_saved'    => __( 'Follow setting saved.', 'daymark' ),
-			'app_badge_saved'           => __( 'App icon setting saved.', 'daymark' ),
-			'publishing_defaults_saved' => __( 'Defaults for new Marks saved.', 'daymark' ),
-			'bridgy_fed_saved'          => __( 'Bridgy Fed setting saved.', 'daymark' ),
-			'poll_interval_saved'       => __( 'Check frequency saved.', 'daymark' ),
-			'feeds_unchanged'           => __( 'No changes made to this site\'s feeds.', 'daymark' ),
+			'unsubscribed'     => __( 'Unsubscribed.', 'daymark' ),
+			'refreshed'        => __( 'Refresh requested.', 'daymark' ),
+			'icon_refreshed'   => __( 'Site icon refreshed.', 'daymark' ),
+			'title_updated'    => __( 'Site name updated.', 'daymark' ),
+			'favorited'        => __( 'Starred as favorite.', 'daymark' ),
+			'unfavorited'      => __( 'Removed from favorites.', 'daymark' ),
+			'privacy_saved'    => __( 'Data & privacy settings saved.', 'daymark' ),
+			'general_saved'    => __( 'Settings saved.', 'daymark' ),
+			'bridgy_fed_saved' => __( 'Bridgy Fed setting saved.', 'daymark' ),
+			'feeds_unchanged'  => __( 'No changes made to this site\'s feeds.', 'daymark' ),
 		);
 
 		if ( isset( $success_messages[ $notice ] ) ) {
@@ -3756,9 +3746,7 @@ class Daymark_Admin_Subscriptions {
 		$overridden = $stored !== $effective;
 		$current    = $stored;
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:1em;">
-			<input type="hidden" name="action" value="daymark_subscription_poll_interval_save" />
-			<?php wp_nonce_field( 'daymark_subscription_poll_interval_save', 'daymark_subscription_poll_interval_save_nonce' ); ?>
+		<p>
 			<label for="daymark_subscription_poll_interval">
 				<?php esc_html_e( 'Check for new posts:', 'daymark' ); ?>
 			</label>
@@ -3767,20 +3755,18 @@ class Daymark_Admin_Subscriptions {
 					<option value="<?php echo esc_attr( (string) $seconds ); ?>" <?php selected( $current, $seconds ); ?>><?php echo esc_html( $label ); ?></option>
 				<?php endforeach; ?>
 			</select>
-			<?php if ( $overridden ) : ?>
-				<p class="description">
-					<?php
-					printf(
-						/* translators: %s: a duration, such as "2 hours" */
-						esc_html__( 'Set by code on this site to every %s, so it can\'t be changed here.', 'daymark' ),
-						esc_html( human_time_diff( 0, max( MINUTE_IN_SECONDS, $effective ) ) )
-					);
-					?>
-				</p>
-			<?php else : ?>
-				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-poll-interval-submit', false ); ?>
-			<?php endif; ?>
-		</form>
+		</p>
+		<?php if ( $overridden ) : ?>
+			<p class="description">
+				<?php
+				printf(
+					/* translators: %s: a duration, such as "2 hours" */
+					esc_html__( 'Set by code on this site to every %s, so it can\'t be changed here.', 'daymark' ),
+					esc_html( human_time_diff( 0, max( MINUTE_IN_SECONDS, $effective ) ) )
+				);
+				?>
+			</p>
+		<?php endif; ?>
 		<?php
 	}
 
@@ -3797,30 +3783,24 @@ class Daymark_Admin_Subscriptions {
 		$effective  = Daymark_Settings::blogroll_public();
 		$overridden = $stored !== $effective;
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:1.5em;">
-			<input type="hidden" name="action" value="daymark_blogroll_save" />
-			<?php wp_nonce_field( 'daymark_blogroll_save', 'daymark_blogroll_save_nonce' ); ?>
+		<p>
+			<label>
+				<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::BLOGROLL_PUBLIC ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+				<?php esc_html_e( 'Share the sites you follow as a public blogroll', 'daymark' ); ?>
+			</label>
+		</p>
+		<p class="description">
+			<?php esc_html_e( 'Publishes your active subscriptions as an OPML file that feed readers can import, and links to it from your site\'s pages so readers can find it. To show the list on a page, add the Blogroll block.', 'daymark' ); ?>
+		</p>
+		<?php if ( $effective ) : ?>
 			<p>
-				<label>
-					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::BLOGROLL_PUBLIC ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
-					<?php esc_html_e( 'Share the sites you follow as a public blogroll', 'daymark' ); ?>
-				</label>
+				<?php esc_html_e( 'Your blogroll:', 'daymark' ); ?>
+				<a href="<?php echo esc_url( Daymark_Blogroll::opml_url() ); ?>"><?php echo esc_html( Daymark_Blogroll::opml_url() ); ?></a>
 			</p>
-			<p class="description">
-				<?php esc_html_e( 'Publishes your active subscriptions as an OPML file that feed readers can import, and links to it from your site\'s pages so readers can find it. To show the list on a page, add the Blogroll block.', 'daymark' ); ?>
-			</p>
-			<?php if ( $effective ) : ?>
-				<p>
-					<?php esc_html_e( 'Your blogroll:', 'daymark' ); ?>
-					<a href="<?php echo esc_url( Daymark_Blogroll::opml_url() ); ?>"><?php echo esc_html( Daymark_Blogroll::opml_url() ); ?></a>
-				</p>
-			<?php endif; ?>
-			<?php if ( $overridden ) : ?>
-				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
-			<?php else : ?>
-				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-blogroll-submit', false ); ?>
-			<?php endif; ?>
-		</form>
+		<?php endif; ?>
+		<?php if ( $overridden ) : ?>
+			<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+		<?php endif; ?>
 		<?php
 	}
 
@@ -3838,44 +3818,19 @@ class Daymark_Admin_Subscriptions {
 		$effective  = Daymark_Settings::hide_notes_on_home();
 		$overridden = $stored !== $effective;
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-			<input type="hidden" name="action" value="daymark_notes_save" />
-			<?php wp_nonce_field( 'daymark_notes_save', 'daymark_notes_save_nonce' ); ?>
-			<p>
-				<label>
-					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::HIDE_NOTES_ON_HOME ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
-					<?php esc_html_e( 'Keep Notes off your blog\'s home page and main feed', 'daymark' ); ?>
-				</label>
-			</p>
-			<p class="description">
-				<?php esc_html_e( 'A Note is any post with the Aside format: Notes you post from Daymark, including reblogs and replies, and Aside posts written in the editor. Notes kept off still have their own pages and still appear in archives, search, and Daymark\'s Timeline.', 'daymark' ); ?>
-			</p>
-			<?php if ( $overridden ) : ?>
-				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
-			<?php else : ?>
-				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-notes-submit', false ); ?>
-			<?php endif; ?>
-		</form>
+		<p>
+			<label>
+				<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::HIDE_NOTES_ON_HOME ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+				<?php esc_html_e( 'Keep Notes off your blog\'s home page and main feed', 'daymark' ); ?>
+			</label>
+		</p>
+		<p class="description">
+			<?php esc_html_e( 'A Note is any post with the Aside format: Notes you post from Daymark, including reblogs and replies, and Aside posts written in the editor. Notes kept off still have their own pages and still appear in archives, search, and Daymark\'s Timeline.', 'daymark' ); ?>
+		</p>
+		<?php if ( $overridden ) : ?>
+			<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+		<?php endif; ?>
 		<?php
-	}
-
-	/**
-	 * Save the Notes setting (admin_post_daymark_notes_save).
-	 *
-	 * @since 0.20.0
-	 *
-	 * @return void
-	 */
-	public function handle_notes_save(): void {
-		if ( ! current_user_can( self::CAPABILITY ) ) {
-			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
-		}
-
-		check_admin_referer( 'daymark_notes_save', 'daymark_notes_save_nonce' );
-
-		update_option( Daymark_Settings::HIDE_NOTES_ON_HOME, isset( $_POST[ Daymark_Settings::HIDE_NOTES_ON_HOME ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
-
-		$this->redirect( array( self::NOTICE_QUERY_VAR => 'notes_saved' ), 'general' );
 	}
 
 	/**
@@ -3891,44 +3846,19 @@ class Daymark_Admin_Subscriptions {
 		$effective  = Daymark_Settings::app_badge_unread();
 		$overridden = $stored !== $effective;
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-			<input type="hidden" name="action" value="daymark_app_badge_save" />
-			<?php wp_nonce_field( 'daymark_app_badge_save', 'daymark_app_badge_save_nonce' ); ?>
-			<p>
-				<label>
-					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::APP_BADGE ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
-					<?php esc_html_e( 'Show the number of unread notifications on the app icon', 'daymark' ); ?>
-				</label>
-			</p>
-			<p class="description">
-				<?php esc_html_e( 'The number appears on Daymark\'s icon once Daymark is added to a home screen or installed. It matches the Unread tab in Notifications and updates while the app is open. Some browsers and phones don\'t show app badges.', 'daymark' ); ?>
-			</p>
-			<?php if ( $overridden ) : ?>
-				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
-			<?php else : ?>
-				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-app-badge-submit', false ); ?>
-			<?php endif; ?>
-		</form>
+		<p>
+			<label>
+				<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::APP_BADGE ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+				<?php esc_html_e( 'Show the number of unread notifications on the app icon', 'daymark' ); ?>
+			</label>
+		</p>
+		<p class="description">
+			<?php esc_html_e( 'The number appears on Daymark\'s icon once Daymark is added to a home screen or installed. It matches the Unread tab in Notifications and updates while the app is open. Some browsers and phones don\'t show app badges.', 'daymark' ); ?>
+		</p>
+		<?php if ( $overridden ) : ?>
+			<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+		<?php endif; ?>
 		<?php
-	}
-
-	/**
-	 * Save the app badge setting (admin_post_daymark_app_badge_save).
-	 *
-	 * @since 0.21.0
-	 *
-	 * @return void
-	 */
-	public function handle_app_badge_save(): void {
-		if ( ! current_user_can( self::CAPABILITY ) ) {
-			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
-		}
-
-		check_admin_referer( 'daymark_app_badge_save', 'daymark_app_badge_save_nonce' );
-
-		update_option( Daymark_Settings::APP_BADGE, isset( $_POST[ Daymark_Settings::APP_BADGE ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
-
-		$this->redirect( array( self::NOTICE_QUERY_VAR => 'app_badge_saved' ), 'general' );
 	}
 
 	/**
@@ -3942,42 +3872,19 @@ class Daymark_Admin_Subscriptions {
 		$effective  = Daymark_Settings::announce_follows();
 		$overridden = $stored !== $effective;
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-			<input type="hidden" name="action" value="daymark_announce_follows_save" />
-			<?php wp_nonce_field( 'daymark_announce_follows_save', 'daymark_announce_follows_save_nonce' ); ?>
-			<p>
-				<label>
-					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::ANNOUNCE_FOLLOWS ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
-					<?php esc_html_e( 'Tell sites when you follow them', 'daymark' ); ?>
-				</label>
-			</p>
-			<p class="description">
-				<?php esc_html_e( 'When you follow a site, Daymark sends it a Webmention from a small, unlisted page on your site that says you follow it. Daymark sites and other IndieWeb sites can then show you as a follower. Unfollowing removes the page. Sites you followed before turning this on aren’t told.', 'daymark' ); ?>
-			</p>
-			<?php if ( $overridden ) : ?>
-				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
-			<?php else : ?>
-				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-announce-follows-submit', false ); ?>
-			<?php endif; ?>
-		</form>
+		<p>
+			<label>
+				<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::ANNOUNCE_FOLLOWS ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+				<?php esc_html_e( 'Tell sites when you follow them', 'daymark' ); ?>
+			</label>
+		</p>
+		<p class="description">
+			<?php esc_html_e( 'When you follow a site, Daymark sends it a Webmention from a small, unlisted page on your site that says you follow it. Daymark sites and other IndieWeb sites can then show you as a follower. Unfollowing removes the page. Sites you followed before turning this on aren’t told.', 'daymark' ); ?>
+		</p>
+		<?php if ( $overridden ) : ?>
+			<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+		<?php endif; ?>
 		<?php
-	}
-
-	/**
-	 * Save the follow announcement setting (admin_post_daymark_announce_follows_save).
-	 *
-	 * @return void
-	 */
-	public function handle_announce_follows_save(): void {
-		if ( ! current_user_can( self::CAPABILITY ) ) {
-			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
-		}
-
-		check_admin_referer( 'daymark_announce_follows_save', 'daymark_announce_follows_save_nonce' );
-
-		update_option( Daymark_Settings::ANNOUNCE_FOLLOWS, isset( $_POST[ Daymark_Settings::ANNOUNCE_FOLLOWS ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
-
-		$this->redirect( array( self::NOTICE_QUERY_VAR => 'announce_follows_saved' ), 'general' );
 	}
 
 	/**
@@ -3993,44 +3900,19 @@ class Daymark_Admin_Subscriptions {
 		$effective  = Daymark_Settings::compact_timeline();
 		$overridden = $stored !== $effective;
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-			<input type="hidden" name="action" value="daymark_timeline_display_save" />
-			<?php wp_nonce_field( 'daymark_timeline_display_save', 'daymark_timeline_display_save_nonce' ); ?>
-			<p>
-				<label>
-					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::COMPACT_TIMELINE ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
-					<?php esc_html_e( 'Show posts as a compact list', 'daymark' ); ?>
-				</label>
-			</p>
-			<p class="description">
-				<?php esc_html_e( 'The Timeline, Search, and Explore show each post as just its title and a small thumbnail, so more posts fit on the screen. Open a post to see all of it and to like, comment, or reblog. Drafts still show in full.', 'daymark' ); ?>
-			</p>
-			<?php if ( $overridden ) : ?>
-				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
-			<?php else : ?>
-				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-timeline-display-submit', false ); ?>
-			<?php endif; ?>
-		</form>
+		<p>
+			<label>
+				<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::COMPACT_TIMELINE ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+				<?php esc_html_e( 'Show posts as a compact list', 'daymark' ); ?>
+			</label>
+		</p>
+		<p class="description">
+			<?php esc_html_e( 'The Timeline, Search, and Explore show each post as just its title and a small thumbnail, so more posts fit on the screen. Open a post to see all of it and to like, comment, or reblog. Drafts still show in full.', 'daymark' ); ?>
+		</p>
+		<?php if ( $overridden ) : ?>
+			<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+		<?php endif; ?>
 		<?php
-	}
-
-	/**
-	 * Save the Timeline setting (admin_post_daymark_timeline_display_save).
-	 *
-	 * @since 0.21.0
-	 *
-	 * @return void
-	 */
-	public function handle_timeline_display_save(): void {
-		if ( ! current_user_can( self::CAPABILITY ) ) {
-			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
-		}
-
-		check_admin_referer( 'daymark_timeline_display_save', 'daymark_timeline_display_save_nonce' );
-
-		update_option( Daymark_Settings::COMPACT_TIMELINE, isset( $_POST[ Daymark_Settings::COMPACT_TIMELINE ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
-
-		$this->redirect( array( self::NOTICE_QUERY_VAR => 'timeline_display_saved' ), 'general' );
 	}
 
 	/**
@@ -4043,101 +3925,104 @@ class Daymark_Admin_Subscriptions {
 	 */
 	private function render_app_font_form(): void {
 		$fonts      = Daymark_Settings::font_library_fonts();
-		$stored     = (string) get_option( Daymark_Settings::APP_FONT, '' );
-		$stored     = isset( $fonts[ $stored ] ) ? $stored : '';
 		$effective  = Daymark_Settings::app_font();
-		$overridden = $stored !== $effective;
+		$overridden = self::stored_app_font( $fonts ) !== $effective;
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-			<input type="hidden" name="action" value="daymark_app_font_save" />
-			<?php wp_nonce_field( 'daymark_app_font_save', 'daymark_app_font_save_nonce' ); ?>
-			<p>
-				<label for="daymark-app-font"><?php esc_html_e( 'Show Daymark\'s text in', 'daymark' ); ?></label><br />
-				<select id="daymark-app-font" name="<?php echo esc_attr( Daymark_Settings::APP_FONT ); ?>"<?php disabled( $overridden ); ?>>
-					<option value=""<?php selected( $effective, '' ); ?>><?php esc_html_e( 'Daymark\'s usual font', 'daymark' ); ?></option>
-					<?php foreach ( $fonts as $slug => $name ) : ?>
-						<option value="<?php echo esc_attr( $slug ); ?>"<?php selected( $effective, $slug ); ?>><?php echo esc_html( $name ); ?></option>
-					<?php endforeach; ?>
-				</select>
-			</p>
-			<p class="description">
-				<?php
-				if ( $fonts ) {
-					esc_html_e( 'Pick any font in your site\'s Font Library, and the Daymark app shows its text in it. Your site\'s own pages keep the fonts your theme gives them.', 'daymark' );
-				} else {
-					esc_html_e( 'Your site\'s Font Library has no fonts yet. Add one, and you can pick it here for the Daymark app.', 'daymark' );
-				}
+		<p>
+			<label for="daymark-app-font"><?php esc_html_e( 'Show Daymark\'s text in', 'daymark' ); ?></label><br />
+			<select id="daymark-app-font" name="<?php echo esc_attr( Daymark_Settings::APP_FONT ); ?>"<?php disabled( $overridden ); ?>>
+				<option value=""<?php selected( $effective, '' ); ?>><?php esc_html_e( 'Daymark\'s usual font', 'daymark' ); ?></option>
+				<?php foreach ( $fonts as $slug => $name ) : ?>
+					<option value="<?php echo esc_attr( $slug ); ?>"<?php selected( $effective, $slug ); ?>><?php echo esc_html( $name ); ?></option>
+				<?php endforeach; ?>
+			</select>
+		</p>
+		<p class="description">
+			<?php
+			if ( $fonts ) {
+				esc_html_e( 'Pick any font in your site\'s Font Library, and the Daymark app shows its text in it. Your site\'s own pages keep the fonts your theme gives them.', 'daymark' );
+			} else {
+				esc_html_e( 'Your site\'s Font Library has no fonts yet. Add one, and you can pick it here for the Daymark app.', 'daymark' );
+			}
 
-				if ( current_user_can( 'edit_theme_options' ) ) {
-					printf(
-						' <a href="%1$s">%2$s</a>',
-						esc_url( admin_url( 'font-library.php' ) ),
-						esc_html__( 'Add or remove fonts', 'daymark' )
-					);
-				}
-				?>
-			</p>
-			<?php if ( $overridden ) : ?>
-				<p class="description"><?php esc_html_e( 'Chosen by code on this site, so it can\'t be changed here.', 'daymark' ); ?></p>
-			<?php else : ?>
-				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-app-font-submit', false ); ?>
-			<?php endif; ?>
-		</form>
+			if ( current_user_can( 'edit_theme_options' ) ) {
+				printf(
+					' <a href="%1$s">%2$s</a>',
+					esc_url( admin_url( 'font-library.php' ) ),
+					esc_html__( 'Add or remove fonts', 'daymark' )
+				);
+			}
+			?>
+		</p>
+		<?php if ( $overridden ) : ?>
+			<p class="description"><?php esc_html_e( 'Chosen by code on this site, so it can\'t be changed here.', 'daymark' ); ?></p>
+		<?php endif; ?>
 		<?php
 	}
 
 	/**
-	 * Save the Font setting (admin_post_daymark_app_font_save). Only a
-	 * font the Font Library has, or '' for Daymark's usual font, is stored.
+	 * The font stored on Settings -> Daymark, or '' when none is stored or
+	 * the stored one has left the Font Library. A different value from
+	 * Daymark_Settings::app_font() means code on the site chose the font.
 	 *
-	 * @since 0.24.0
-	 *
-	 * @return void
+	 * @param array<string, string> $fonts Font Library fonts, slug => name.
+	 * @return string
 	 */
-	public function handle_app_font_save(): void {
-		if ( ! current_user_can( self::CAPABILITY ) ) {
-			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
-		}
+	private static function stored_app_font( array $fonts ): string {
+		$stored = (string) get_option( Daymark_Settings::APP_FONT, '' );
 
-		check_admin_referer( 'daymark_app_font_save', 'daymark_app_font_save_nonce' );
-
-		// A font chosen by code shows a disabled list, which a browser
-		// doesn't send: leave the stored choice alone then.
-		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
-		if ( isset( $_POST[ Daymark_Settings::APP_FONT ] ) ) {
-			$slug = sanitize_title( wp_unslash( $_POST[ Daymark_Settings::APP_FONT ] ) );
-
-			if ( '' !== $slug && ! isset( Daymark_Settings::font_library_fonts()[ $slug ] ) ) {
-				$this->redirect_with_error( __( 'That font is no longer in your site\'s Font Library. Pick another one.', 'daymark' ), 'general' );
-			}
-
-			update_option( Daymark_Settings::APP_FONT, $slug );
-		}
-		// phpcs:enable WordPress.Security.NonceVerification.Missing
-
-		$this->redirect( array( self::NOTICE_QUERY_VAR => 'app_font_saved' ), 'general' );
+		return isset( $fonts[ $stored ] ) ? $stored : '';
 	}
 
 	/**
-	 * Save the "New Marks" defaults (admin_post_daymark_publishing_defaults_save).
+	 * Save the Font setting, as part of handle_general_save(). Only a font
+	 * the Font Library has, or '' for Daymark's usual font, is stored. A
+	 * font chosen by code shows a disabled list, which a browser doesn't
+	 * send, so the stored choice is left alone then.
+	 *
+	 * @since 0.24.0
+	 *
+	 * @return string An error message when nothing was saved, or ''.
+	 */
+	private function save_app_font(): string {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Verified in handle_general_save() via check_admin_referer().
+		$fonts = Daymark_Settings::font_library_fonts();
+
+		if ( ! isset( $_POST[ Daymark_Settings::APP_FONT ] ) || self::stored_app_font( $fonts ) !== Daymark_Settings::app_font() ) {
+			return '';
+		}
+
+		$slug = sanitize_title( wp_unslash( $_POST[ Daymark_Settings::APP_FONT ] ) );
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+
+		if ( '' !== $slug && ! isset( $fonts[ $slug ] ) ) {
+			return __( 'That font is no longer in your site\'s Font Library, so the font was left as it was.', 'daymark' );
+		}
+
+		update_option( Daymark_Settings::APP_FONT, $slug );
+
+		return '';
+	}
+
+	/**
+	 * Save the "New Marks" defaults, as part of handle_general_save().
 	 *
 	 * Only the cells the table actually showed are replaced: a type a
 	 * filter overrides keeps its stored value, and a stored destination
 	 * that isn't shown (not connected right now, or can't take the type)
 	 * is kept, so disconnecting a destination doesn't erase its defaults.
 	 *
+	 * Each option is written only when one of its types changed. The
+	 * General tab's one Save button sends this table along with every
+	 * other setting, and a site that never set its own defaults should
+	 * stay on the built-in ones until someone changes a box here.
+	 *
 	 * @since 0.20.0
 	 *
 	 * @return void
 	 */
-	public function handle_publishing_defaults_save(): void {
-		if ( ! current_user_can( self::CAPABILITY ) ) {
-			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
-		}
-
-		check_admin_referer( 'daymark_publishing_defaults_save', 'daymark_publishing_defaults_save_nonce' );
-
-		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+	private function save_publishing_defaults(): void {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Verified in handle_general_save() via check_admin_referer().
 		$posted_destinations = isset( $_POST['daymark_default_destinations'] ) && is_array( $_POST['daymark_default_destinations'] )
 			? wp_unslash( $_POST['daymark_default_destinations'] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Each value is sanitized below.
 			: array();
@@ -4146,15 +4031,17 @@ class Daymark_Admin_Subscriptions {
 			: array();
 		// phpcs:enable WordPress.Security.NonceVerification.Missing
 
-		$connectors      = self::connected_destinations();
-		$category_ids    = array_map(
+		$connectors           = self::connected_destinations();
+		$category_ids         = array_map(
 			static function ( $category ): int {
 				return (int) $category->term_id;
 			},
 			self::choosable_categories()
 		);
-		$destination_map = array();
-		$category_map    = array();
+		$destination_map      = array();
+		$category_map         = array();
+		$destinations_changed = false;
+		$categories_changed   = false;
 
 		foreach ( array_keys( self::publishing_types() ) as $type ) {
 			$stored  = Daymark_Settings::stored_destination_defaults( $type );
@@ -4182,62 +4069,110 @@ class Daymark_Admin_Subscriptions {
 				$picked                = isset( $posted_categories[ $type ] ) ? array_map( 'absint', (array) $posted_categories[ $type ] ) : array();
 				$category_map[ $type ] = array_values( array_unique( array_intersect( $picked, $category_ids ) ) );
 			}
+
+			$destinations_changed = $destinations_changed || ! self::same_ids( $destination_map[ $type ], $stored );
+			$categories_changed   = $categories_changed || ! self::same_ids( $category_map[ $type ], $stored_categories );
 		}
 
-		update_option( Daymark_Settings::DEFAULT_DESTINATIONS, $destination_map, false );
-		update_option( Daymark_Settings::DEFAULT_CATEGORIES, $category_map, false );
+		if ( $destinations_changed ) {
+			update_option( Daymark_Settings::DEFAULT_DESTINATIONS, $destination_map, false );
+		}
 
-		$this->redirect( array( self::NOTICE_QUERY_VAR => 'publishing_defaults_saved' ), 'general' );
+		if ( $categories_changed ) {
+			update_option( Daymark_Settings::DEFAULT_CATEGORIES, $category_map, false );
+		}
 	}
 
 	/**
-	 * Save the public blogroll setting (admin_post_daymark_blogroll_save).
-	 *
-	 * @since 0.20.0
-	 *
-	 * @return void
-	 */
-	public function handle_blogroll_save(): void {
-		if ( ! current_user_can( self::CAPABILITY ) ) {
-			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
-		}
-
-		check_admin_referer( 'daymark_blogroll_save', 'daymark_blogroll_save_nonce' );
-
-		update_option( Daymark_Settings::BLOGROLL_PUBLIC, isset( $_POST[ Daymark_Settings::BLOGROLL_PUBLIC ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
-
-		$this->redirect( array( self::NOTICE_QUERY_VAR => 'blogroll_saved' ), 'general' );
-	}
-
-	/**
-	 * Handle the "Check for new posts" form
-	 * (admin_post_daymark_subscription_poll_interval_save, issue #291). The
-	 * posted value is validated against poll_interval_options()'s own fixed
-	 * set before being stored — never trusted as an arbitrary integer.
+	 * Save the "Check for new posts" choice (issue #291), as part of
+	 * handle_general_save(). The posted value is validated against
+	 * poll_interval_options()'s own fixed set before being stored — never
+	 * trusted as an arbitrary integer. A choice a filter overrides is shown
+	 * disabled, so it isn't sent and the stored value is left alone.
 	 *
 	 * @since 0.13.0
 	 *
+	 * @return string An error message when nothing was saved, or ''.
+	 */
+	private function save_poll_interval(): string {
+		$stored = (int) get_option( Daymark_Settings::POLL_INTERVAL, DAY_IN_SECONDS );
+
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Verified in handle_general_save() via check_admin_referer().
+		if ( Daymark_Settings::poll_interval() !== $stored || ! isset( $_POST['daymark_subscription_poll_interval'] ) ) {
+			return '';
+		}
+
+		$posted = absint( wp_unslash( $_POST['daymark_subscription_poll_interval'] ) );
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+
+		if ( ! isset( self::poll_interval_options()[ $posted ] ) ) {
+			return __( 'That check frequency is not a valid choice.', 'daymark' );
+		}
+
+		update_option( Daymark_Settings::POLL_INTERVAL, $posted );
+
+		return '';
+	}
+
+	/**
+	 * The General tab's on/off settings: option name => its default and
+	 * the value in effect (the option, unless a filter overrides it).
+	 *
+	 * @return array<string, array{0: bool, 1: bool}>
+	 */
+	private static function general_toggles(): array {
+		return array(
+			Daymark_Settings::BLOGROLL_PUBLIC    => array( false, Daymark_Settings::blogroll_public() ),
+			Daymark_Settings::ANNOUNCE_FOLLOWS   => array( true, Daymark_Settings::announce_follows() ),
+			Daymark_Settings::HIDE_NOTES_ON_HOME => array( false, Daymark_Settings::hide_notes_on_home() ),
+			Daymark_Settings::COMPACT_TIMELINE   => array( false, Daymark_Settings::compact_timeline() ),
+			Daymark_Settings::APP_BADGE          => array( false, Daymark_Settings::app_badge_unread() ),
+		);
+	}
+
+	/**
+	 * Save the General tab (admin_post_daymark_general_save): every
+	 * section's settings from its one form and one Save button.
+	 *
+	 * A section whose value is refused (a font that has left the Font
+	 * Library) is left as it was and named in an error notice; the other
+	 * sections are still saved, so one typo doesn't lose the rest.
+	 *
 	 * @return void
 	 */
-	public function handle_poll_interval_save(): void {
+	public function handle_general_save(): void {
 		if ( ! current_user_can( self::CAPABILITY ) ) {
 			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
 		}
 
-		check_admin_referer( 'daymark_subscription_poll_interval_save', 'daymark_subscription_poll_interval_save_nonce' );
+		check_admin_referer( 'daymark_general_save', 'daymark_general_save_nonce' );
 
-		$posted  = isset( $_POST['daymark_subscription_poll_interval'] ) ? absint( wp_unslash( $_POST['daymark_subscription_poll_interval'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
-		$allowed = self::poll_interval_options();
+		foreach ( self::general_toggles() as $option => $toggle ) {
+			// A disabled (code-overridden) checkbox isn't submitted, so
+			// saving it would silently flip the stored option.
+			if ( (bool) get_option( $option, $toggle[0] ) !== $toggle[1] ) {
+				continue;
+			}
 
-		if ( ! isset( $allowed[ $posted ] ) ) {
-			$this->redirect_with_error( __( 'That check frequency is not a valid choice.', 'daymark' ), 'general' );
-
-			return;
+			update_option( $option, isset( $_POST[ $option ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
 		}
 
-		update_option( 'daymark_subscription_poll_interval', $posted );
+		$this->save_publishing_defaults();
 
-		$this->redirect( array( self::NOTICE_QUERY_VAR => 'poll_interval_saved' ), 'general' );
+		$errors = array_filter( array( $this->save_poll_interval(), $this->save_app_font() ) );
+
+		if ( $errors ) {
+			$this->redirect_with_error(
+				sprintf(
+					/* translators: %s: what was wrong with one setting, as a full sentence */
+					__( '%s Your other changes were saved.', 'daymark' ),
+					implode( ' ', $errors )
+				),
+				'general'
+			);
+		}
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'general_saved' ), 'general' );
 	}
 
 	/**
