@@ -22,6 +22,7 @@ can't act on them.
 
 ### Added
 
+- The New Mark button in the bottom bar now shows "New Mark" when you hover over it with a mouse, the same way the Timeline, Explore, Notifications and Me tabs show their names. ([#634](https://github.com/jeffpaul/daymark/pull/634))
 - You can try Daymark before installing it: the Live Preview button on its wordpress.org page opens a throwaway site in your browser, with sample Marks already posted and four sites already followed. ([#633](https://github.com/jeffpaul/daymark/pull/633))
 
 ### Fixed
