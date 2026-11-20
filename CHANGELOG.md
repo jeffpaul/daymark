@@ -27,7 +27,12 @@ can't act on them.
 ### Changed
 
 - Settings -> Daymark -> General now has one "Save changes" button at the bottom, in place of a Save button in each of its eight sections. One press saves everything on the page, so a change in one section is no longer lost by pressing Save in another. ([#635](https://github.com/jeffpaul/daymark/pull/635))
+- The font setting in Settings -> Daymark -> General now lists every font in your site's Font Library, both the ones you added and the ones your theme brings. Pick one and the Daymark app shows its text in it. ([#638](https://github.com/jeffpaul/daymark/pull/638))
 - On Explore, Look back now sits just above the People row, so your own memories are the first thing under the search box (and under your recent searches, when you have any) without scrolling past People and Your tags. ([#637](https://github.com/jeffpaul/daymark/pull/637))
+
+### Removed
+
+- The Bionic Reading font setting is gone, along with its web font file address. A site that was showing a Bionic Reading family from its Font Library keeps it as its chosen font, and any other site goes back to Daymark's usual font. For developers, the `daymark_bionic_reading_font`, `daymark_bionic_reading_font_url`, and `daymark_bionic_reading_font_family` filters are replaced by `daymark_app_font`. ([#638](https://github.com/jeffpaul/daymark/pull/638))
 
 ### Fixed
 
