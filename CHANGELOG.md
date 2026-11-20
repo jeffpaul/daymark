@@ -20,6 +20,14 @@ can't act on them.
 
 ## [Unreleased]
 
+### Changed
+
+- The font setting in Settings -> Daymark -> General now lists every font in your site's Font Library, both the ones you added and the ones your theme brings. Pick one and the Daymark app shows its text in it. ([#638](https://github.com/jeffpaul/daymark/pull/638))
+
+### Removed
+
+- The Bionic Reading font setting is gone, along with its web font file address. A site that was showing a Bionic Reading family from its Font Library keeps it as its chosen font, and any other site goes back to Daymark's usual font. For developers, the `daymark_bionic_reading_font`, `daymark_bionic_reading_font_url`, and `daymark_bionic_reading_font_family` filters are replaced by `daymark_app_font`. ([#638](https://github.com/jeffpaul/daymark/pull/638))
+
 ### Fixed
 
 - Daymark's page on wordpress.org no longer cuts off its description and its changelog. Both were longer than wordpress.org shows, so the list of outside services stopped partway through and the changelog stopped inside an older release. The details of what your site sends to sites you follow now sit in the FAQ, and the changelog lists the three most recent releases. ([#630](https://github.com/jeffpaul/daymark/pull/630))

@@ -2457,138 +2457,123 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		delete_option( 'daymark_compact_timeline' );
 	}
 
-	/** The General tab offers the Bionic Reading font, off by default. */
-	public function test_general_tab_renders_reading_font_setting_off(): void {
-		$output = $this->render( 'general' );
-
-		$this->assertStringContainsString( 'name="daymark_bionic_reading_font"', $output );
-		$this->assertDoesNotMatchRegularExpression( '/name="daymark_bionic_reading_font"[^>]*checked/', $output );
-		$this->assertStringContainsString( 'name="daymark_bionic_reading_font_url"', $output );
-		$this->assertFalse( Daymark_Settings::bionic_reading_font() );
+	/**
+	 * Install a family in the Font Library, as the Site Editor stores one.
+	 *
+	 * @param string $name Family name.
+	 * @param string $slug Family slug.
+	 * @return int Family post ID.
+	 */
+	private function install_font( string $name, string $slug ): int {
+		return self::factory()->post->create(
+			array(
+				'post_type'    => 'wp_font_family',
+				'post_status'  => 'publish',
+				'post_title'   => $name,
+				'post_name'    => $slug,
+				'post_content' => wp_slash( wp_json_encode( array( 'fontFamily' => '"' . $name . '"' ) ) ),
+			)
+		);
 	}
 
-	/** Saving the Reading setting stores the toggle and a valid font address. */
-	public function test_reading_font_save_turns_setting_on(): void {
+	/** The General tab offers every Font Library font, with Daymark's usual font chosen at first. */
+	public function test_general_tab_renders_font_setting(): void {
+		$this->install_font( 'Inter', 'inter' );
+		$this->install_font( 'Zilla Slab', 'zilla-slab' );
+
+		$output = $this->render( 'general' );
+
+		$this->assertStringContainsString( '<select id="daymark-app-font" name="daymark_app_font">', $output );
+		$this->assertMatchesRegularExpression( '/<option value=""[^>]*selected/', $output );
+		$this->assertStringContainsString( '<option value="inter">Inter</option>', $output );
+		$this->assertStringContainsString( '<option value="zilla-slab">Zilla Slab</option>', $output );
+	}
+
+	/** Nothing about Bionic Reading is left on the settings screen. */
+	public function test_general_tab_has_no_bionic_reading_setting(): void {
+		$output = $this->render( 'general' );
+
+		$this->assertStringNotContainsStringIgnoringCase( 'bionic', $output );
+	}
+
+	/** With an empty Font Library the screen says where to add a font. */
+	public function test_general_tab_font_setting_with_no_fonts_says_where_to_add_one(): void {
+		$output = $this->render( 'general' );
+
+		if ( array() !== Daymark_Settings::font_library_fonts() ) {
+			$this->markTestSkipped( 'The active theme has fonts of its own.' );
+		}
+
+		$this->assertStringContainsString( 'has no fonts yet', $output );
+	}
+
+	/** Saving the font setting stores the chosen font. */
+	public function test_app_font_save_stores_the_chosen_font(): void {
+		$this->install_font( 'Inter', 'inter' );
+
 		$location = $this->call_handler(
-			'handle_reading_font_save',
-			'daymark_reading_font_save',
-			array(
-				'daymark_bionic_reading_font'     => '1',
-				'daymark_bionic_reading_font_url' => 'https://cdn.example.com/fonts/BionicReading.woff2',
-			)
+			'handle_app_font_save',
+			'daymark_app_font_save',
+			array( 'daymark_app_font' => 'inter' )
 		);
 
 		$this->assertStringContainsString( 'tab=general', $location );
-		$this->assertStringContainsString( 'daymark_notice=reading_font_saved', $location );
-		$this->assertTrue( Daymark_Settings::bionic_reading_font() );
-		$this->assertSame( 'https://cdn.example.com/fonts/BionicReading.woff2', Daymark_Settings::bionic_reading_font_url() );
-		$this->assertSame( array( 'https://cdn.example.com' ), Daymark_Settings::bionic_reading_font_origins() );
-
-		delete_option( 'daymark_bionic_reading_font' );
-		delete_option( 'daymark_bionic_reading_font_url' );
+		$this->assertStringContainsString( 'daymark_notice=app_font_saved', $location );
+		$this->assertSame( 'inter', Daymark_Settings::app_font() );
+		$this->assertMatchesRegularExpression( '/<option value="inter"[^>]*selected/', $this->render( 'general' ) );
 	}
 
-	/** An address that isn't a .woff2/.woff file is refused, and nothing is saved. */
-	public function test_reading_font_save_rejects_non_font_address(): void {
+	/** Saving "Daymark's usual font" clears the choice. */
+	public function test_app_font_save_can_return_to_the_usual_font(): void {
+		$this->install_font( 'Inter', 'inter' );
+		update_option( 'daymark_app_font', 'inter' );
+
+		$this->call_handler( 'handle_app_font_save', 'daymark_app_font_save', array( 'daymark_app_font' => '' ) );
+
+		$this->assertSame( '', get_option( 'daymark_app_font' ) );
+	}
+
+	/** A font the list never offered is refused, and the stored choice stays. */
+	public function test_app_font_save_rejects_a_font_not_in_the_library(): void {
+		$this->install_font( 'Inter', 'inter' );
+		update_option( 'daymark_app_font', 'inter' );
+
 		$location = $this->call_handler(
-			'handle_reading_font_save',
-			'daymark_reading_font_save',
-			array(
-				'daymark_bionic_reading_font'     => '1',
-				'daymark_bionic_reading_font_url' => 'https://cdn.example.com/fonts/BionicReading.ttf',
-			)
+			'handle_app_font_save',
+			'daymark_app_font_save',
+			array( 'daymark_app_font' => 'not-a-font' )
 		);
 
 		$this->assertStringContainsString( 'daymark_notice=error', $location );
-		$this->assertFalse( Daymark_Settings::bionic_reading_font() );
-		$this->assertSame( '', Daymark_Settings::bionic_reading_font_url() );
+		$this->assertSame( 'inter', get_option( 'daymark_app_font' ) );
 	}
 
-	/** A font file on the site's own origin needs no extra font-src origin. */
-	public function test_reading_font_same_origin_needs_no_csp_origin(): void {
-		update_option( 'daymark_bionic_reading_font', '1' );
-		update_option( 'daymark_bionic_reading_font_url', home_url( '/wp-content/uploads/BionicReading.woff2' ) );
+	/** Only someone who can manage Settings -> Daymark may change the font. */
+	public function test_app_font_save_requires_the_capability(): void {
+		$this->install_font( 'Inter', 'inter' );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
 
-		$this->assertSame( array(), Daymark_Settings::bionic_reading_font_origins() );
-
-		delete_option( 'daymark_bionic_reading_font' );
-		delete_option( 'daymark_bionic_reading_font_url' );
+		try {
+			$this->call_handler( 'handle_app_font_save', 'daymark_app_font_save', array( 'daymark_app_font' => 'inter' ) );
+			$this->fail( 'An author changed the font.' );
+		} catch ( WPDieException $e ) {
+			$this->assertSame( '', Daymark_Settings::app_font() );
+		}
 	}
 
-	/** A "Bionic Reading" Font Library family wins over the web font address, face by face. */
-	public function test_reading_font_uses_font_library_family(): void {
-		$family = self::factory()->post->create(
-			array(
-				'post_type'   => 'wp_font_family',
-				'post_status' => 'publish',
-				'post_title'  => 'Bionic Reading',
-				'post_name'   => 'bionic-reading',
-			)
-		);
-		self::factory()->post->create(
-			array(
-				'post_type'    => 'wp_font_face',
-				'post_status'  => 'publish',
-				'post_parent'  => $family,
-				'post_content' => wp_json_encode(
-					array(
-						'fontFamily' => 'Bionic Reading',
-						'fontStyle'  => 'italic',
-						'fontWeight' => '400',
-						'src'        => home_url( '/wp-content/fonts/bionic-reading-italic.woff2' ),
-					)
-				),
-			)
-		);
-		update_option( 'daymark_bionic_reading_font', '1' );
-		update_option( 'daymark_bionic_reading_font_url', 'https://cdn.example.com/fonts/BionicReading.woff2' );
-
-		$this->assertSame( $family, Daymark_Settings::bionic_reading_font_family() );
-		$this->assertSame(
-			array(
-				array(
-					'src'    => home_url( '/wp-content/fonts/bionic-reading-italic.woff2' ),
-					'style'  => 'italic',
-					'weight' => '400',
-				),
-			),
-			Daymark_Settings::bionic_reading_font_faces()
-		);
-		$this->assertSame( array(), Daymark_Settings::bionic_reading_font_origins() );
-		$this->assertMatchesRegularExpression( '/<option value="' . $family . '"[^>]*selected/', $this->render( 'general' ) );
-
-		// Choosing "Don't use the Font Library" falls back to the address.
-		update_option( 'daymark_bionic_reading_font_family', -1 );
-		$this->assertSame( 0, Daymark_Settings::bionic_reading_font_family() );
-		$this->assertSame( 'https://cdn.example.com/fonts/BionicReading.woff2', Daymark_Settings::bionic_reading_font_faces()[0]['src'] );
-
-		delete_option( 'daymark_bionic_reading_font' );
-		delete_option( 'daymark_bionic_reading_font_url' );
-		delete_option( 'daymark_bionic_reading_font_family' );
-	}
-
-	/** Font Library families without "Bionic Reading" in the name are ignored. */
-	public function test_reading_font_ignores_other_font_library_families(): void {
-		self::factory()->post->create(
-			array(
-				'post_type'   => 'wp_font_family',
-				'post_status' => 'publish',
-				'post_title'  => 'Inter',
-			)
-		);
-
-		$this->assertSame( array(), Daymark_Settings::font_library_families() );
-		$this->assertSame( 0, Daymark_Settings::bionic_reading_font_family() );
-	}
-
-	/** A filter that overrides the font toggle disables the checkbox and says so. */
-	public function test_reading_font_overridden_by_filter_is_disabled(): void {
-		add_filter( 'daymark_bionic_reading_font', '__return_true' );
+	/** A font chosen by code on the site shows as chosen, and can't be changed on the screen. */
+	public function test_app_font_overridden_by_filter_is_disabled(): void {
+		$this->install_font( 'Inter', 'inter' );
+		$choose = static function () {
+			return 'inter';
+		};
+		add_filter( 'daymark_app_font', $choose );
 		$output = $this->render( 'general' );
-		remove_filter( 'daymark_bionic_reading_font', '__return_true' );
+		remove_filter( 'daymark_app_font', $choose );
 
-		$this->assertMatchesRegularExpression( '/name="daymark_bionic_reading_font"[^>]*disabled/', $output );
-		$this->assertStringContainsString( 'Turned on by code on this site', $output );
+		$this->assertMatchesRegularExpression( '/<select id="daymark-app-font"[^>]*disabled/', $output );
+		$this->assertMatchesRegularExpression( '/<option value="inter"[^>]*selected/', $output );
+		$this->assertStringContainsString( 'Chosen by code on this site', $output );
 	}
 
 	/** The Failing view lists only subscriptions having trouble, and the view links count both. */

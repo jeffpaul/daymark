@@ -55,49 +55,58 @@
 		return;
 	}
 
-	applyReadingFont(config.readingFont || {});
+	applyAppFont(config.appFont || {});
 
-	// The Bionic Reading font (Settings -> Daymark -> General, off by
-	// default). Daymark can't ship the font, so it loads the site's own
-	// copy: a Font Library family, or a licensed web font file. The font
-	// stack in app.css then falls back to a copy installed on the
-	// device, and to the usual system font after that.
-	function applyReadingFont(setting) {
-		if (!setting.bionic) {
+	// The font chosen from the site's Font Library (Settings -> Daymark ->
+	// General). The app loads the font's files under its own name,
+	// "Daymark App Font", then puts that, the font's own font-family
+	// list, and the usual system fonts into --daymark-font, which every
+	// screen reads. With no font chosen nothing changes.
+	function applyAppFont(setting) {
+		const family = typeof setting.family === 'string' ? setting.family.trim() : '';
+		const faces = (Array.isArray(setting.faces) ? setting.faces : []).filter((face) => face && face.src);
+		const root = document.documentElement;
+		let loaded = false;
+
+		if (!family && !faces.length) {
 			return;
 		}
 
-		document.documentElement.classList.add('daymark-bionic-reading');
-
-		const faces = Array.isArray(setting.faces) ? setting.faces : [];
-
-		if (!faces.length || typeof FontFace !== 'function' || !document.fonts) {
-			return;
-		}
-
-		faces.forEach((face) => {
-			if (!face || !face.src) {
-				return;
-			}
-
-			try {
-				const fontFace = new FontFace(
-					'Daymark Bionic Reading',
-					'url(' + JSON.stringify(String(face.src)) + ')',
-					{
+		if (typeof FontFace === 'function' && document.fonts) {
+			faces.forEach((face) => {
+				try {
+					const descriptors = {
 						style: face.style || 'normal',
 						weight: face.weight || '400',
 						display: 'swap',
+					};
+
+					if (face.unicodeRange) {
+						descriptors.unicodeRange = String(face.unicodeRange);
 					}
-				);
-				document.fonts.add(fontFace);
-				fontFace.load().catch(() => {
-					// A missing or blocked file just leaves the fallback fonts.
-				});
-			} catch (err) {
-				// An unusable face also leaves the fallback fonts.
-			}
-		});
+
+					const fontFace = new FontFace(
+						'Daymark App Font',
+						'url(' + JSON.stringify(String(face.src)) + ')',
+						descriptors
+					);
+
+					// Added, not loaded: the browser then fetches only the
+					// files the text on screen needs, which matters for a
+					// family with a file per weight. A missing or blocked
+					// file just leaves the fallback fonts.
+					document.fonts.add(fontFace);
+					loaded = true;
+				} catch (err) {
+					// An unusable face also leaves the fallback fonts.
+				}
+			});
+		}
+
+		const usual = getComputedStyle(root).getPropertyValue('--daymark-font').trim();
+		const stack = [loaded ? "'Daymark App Font'" : '', family, usual].filter(Boolean).join(', ');
+
+		root.style.setProperty('--daymark-font', stack);
 	}
 
 	// One polite live region for short screen-reader summaries ("5 more
