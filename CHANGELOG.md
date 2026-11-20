@@ -22,7 +22,7 @@ can't act on them.
 
 ### Changed
 
-- On Explore, Look back now sits just above the People row, so your own memories are the first thing under the search box (and under your recent searches, when you have any) without scrolling past People and Your tags. ([#634](https://github.com/jeffpaul/daymark/pull/634))
+- On Explore, Look back now sits just above the People row, so your own memories are the first thing under the search box (and under your recent searches, when you have any) without scrolling past People and Your tags. ([#637](https://github.com/jeffpaul/daymark/pull/637))
 
 ### Fixed
 
