@@ -6,10 +6,11 @@
  */
 
 /**
- * Every Playground preview (the README's "Try it" demo, the button on each
- * pull request, and the wordpress.org Live Preview) shows the same demo,
- * because each one only runs `.github/blueprints/set-up-demo.php`. These
- * tests hold the three to that, and run the script.
+ * Every Playground preview shows the same demo. The README's "Try it" link
+ * and the wordpress.org Live Preview are one blueprint
+ * (`.wordpress-org/blueprints/blueprint.json`), and that blueprint and the
+ * button on each pull request only run `.github/blueprints/set-up-demo.php`.
+ * These tests hold them to that, and run the script.
  *
  * The script must never generate its own media: a GD-produced placeholder
  * image once made every preview fatal inside Playground (see
@@ -53,29 +54,36 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The README demo's one PHP step only runs the shared script, from the
-	 * plugin's own folder (this preview installs the repository as the
-	 * plugin).
+	 * The README's "Try it" link and its Playground badge open the one
+	 * blueprint wordpress.org uses, from `main`. There is no second
+	 * blueprint file for the README to drift away to.
 	 */
-	public function test_readme_demo_runs_the_shared_script(): void {
-		$code = $this->blueprint_php( '.github/blueprints/blueprint.json' );
+	public function test_readme_links_open_the_one_blueprint(): void {
+		$readme = (string) file_get_contents( $this->repo_path( 'README.md' ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local repository file.
 
-		$this->assertCount( 1, $code );
-		$this->assertStringContainsString( "dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/set-up-demo.php'", $code[0] );
-		$this->assertFileExists( $this->repo_path( '.github/blueprints/set-up-demo.php' ) );
+		preg_match_all( '~https://playground\.wordpress\.net/\?blueprint-url=([^)\s]+)~', $readme, $links );
+
+		$this->assertCount( 2, $links[1], 'the badge and the "Try it" link' );
+
+		foreach ( $links[1] as $blueprint_url ) {
+			$this->assertSame( 'https://raw.githubusercontent.com/jeffpaul/daymark/main/.wordpress-org/blueprints/blueprint.json', $blueprint_url );
+		}
+
+		$this->assertFileExists( $this->repo_path( '.wordpress-org/blueprints/blueprint.json' ) );
+		$this->assertFileDoesNotExist( $this->repo_path( '.github/blueprints/blueprint.json' ) );
+		$this->assertSame( array(), glob( $this->repo_path( '.github/blueprints/*.json' ) ) );
 	}
 
 	/**
-	 * None of the three previews carries demo content of its own: no list
-	 * of sites to follow, no call that follows one, no sample Mark. If one
-	 * did, the previews would drift apart again.
+	 * Neither the blueprint nor the pull request preview carries demo
+	 * content of its own: no list of sites to follow, no call that follows
+	 * one, no sample Mark. If one did, the previews would drift apart again.
 	 */
 	public function test_no_preview_carries_its_own_demo_content(): void {
 		$workflow = (string) file_get_contents( $this->repo_path( '.github/workflows/pr-playground-preview.yml' ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local repository file.
 		$sources  = array(
-			'the README demo'           => implode( "\n", $this->blueprint_php( '.github/blueprints/blueprint.json' ) ),
-			'the wordpress.org preview' => implode( "\n", $this->blueprint_php( '.wordpress-org/blueprints/blueprint.json' ) ),
-			'the pull request preview'  => $workflow,
+			'the blueprint'            => implode( "\n", $this->blueprint_php( '.wordpress-org/blueprints/blueprint.json' ) ),
+			'the pull request preview' => $workflow,
 		);
 
 		$this->assertStringContainsString( "'/.github/blueprints/set-up-demo.php'", $workflow );

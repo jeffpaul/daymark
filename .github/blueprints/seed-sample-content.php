@@ -3,8 +3,8 @@
  * Sample Marks for WordPress Playground previews.
  *
  * Required by `set-up-demo.php`, the one script every Playground preview runs
- * (the README demo, each pull request's preview and the wordpress.org Live
- * Preview), after WordPress is loaded and Daymark is active, so a reviewer
+ * (the wordpress.org Live Preview, the README's "Try it" link and each pull
+ * request's preview), after WordPress is loaded and Daymark is active, so a reviewer
  * opens a Timeline that already shows each Mark type and Featured Content
  * kind instead of building them by hand. The sample photos in
  * `sample-images/` are on disk next to this file in every preview: no network

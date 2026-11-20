@@ -9,7 +9,7 @@
 [![Dependency Review](https://github.com/jeffpaul/daymark/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/dependency-review.yml)
 
 [![GPLv2 License](https://img.shields.io/github/license/jeffpaul/daymark.svg)](https://github.com/jeffpaul/daymark/blob/main/LICENSE)
-[![WordPress Playground Demo](https://img.shields.io/badge/Playground_Demo-8A2BE2?logo=wordpress&logoColor=FFFFFF&labelColor=3858E9&color=3858E9)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/jeffpaul/daymark/main/.github/blueprints/blueprint.json)
+[![WordPress Playground Demo](https://img.shields.io/badge/Playground_Demo-8A2BE2?logo=wordpress&logoColor=FFFFFF&labelColor=3858E9&color=3858E9)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/jeffpaul/daymark/main/.wordpress-org/blueprints/blueprint.json)
 
 > Your own social app: follow your friends in one calm, chronological feed, and post from your phone to your site and the networks you use.
 
@@ -113,7 +113,7 @@ the best place for social-shaped content to begin.
   accept, edit, or ignore. AI never gets between you and the Publish
   button.
 
-**[Try Daymark right now in your browser](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/jeffpaul/daymark/main/.github/blueprints/blueprint.json)**
+**[Try Daymark right now in your browser](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/jeffpaul/daymark/main/.wordpress-org/blueprints/blueprint.json)**
 — a full, temporary WordPress site with Daymark pre-installed, no signup
 and nothing to install.
 

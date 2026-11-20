@@ -7,9 +7,10 @@
 
 /**
  * The plugin page's Live Preview runs `.wordpress-org/blueprints/blueprint.json`
- * (SVN `assets/blueprints/blueprint.json`). These tests hold it to what
- * wordpress.org accepts, and to running the same demo script as the README's
- * "Try it" demo (see tests/test-playground-blueprint.php for the script).
+ * (SVN `assets/blueprints/blueprint.json`), and the README's "Try it" link
+ * opens the same file. These tests hold it to what wordpress.org accepts, and
+ * to running the shared demo script (see tests/test-playground-blueprint.php
+ * for the script, and for the README's links).
  */
 class Test_Wporg_Blueprint extends WP_UnitTestCase {
 

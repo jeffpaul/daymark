@@ -68,8 +68,9 @@ jobs:
           // Everything the preview shows (the followed sites, the sample
           // Marks for each Mark type and Featured Content kind) is set up by
           // one script, .github/blueprints/set-up-demo.php, shared with the
-          // README's "Try it" demo and the wordpress.org Live Preview. Change
-          // the demo there, not here.
+          // wordpress.org Live Preview and the README's "Try it" link (those
+          // two are one blueprint, .wordpress-org/blueprints/blueprint.json).
+          // Change the demo there, not here.
           //
           // runPHP steps don't auto-bootstrap WordPress — require wp-load.php
           // first, same as Playground's own documented examples. By this

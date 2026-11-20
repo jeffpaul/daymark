@@ -5,18 +5,17 @@
  * This is the one script every Daymark preview runs once WordPress is loaded
  * and Daymark is active, so they all show the same thing:
  *
- * - the README's "Try it" demo (`blueprint.json` in this folder),
+ * - the Live Preview on wordpress.org and the README's "Try it" link, which
+ *   are one blueprint (`.wordpress-org/blueprints/blueprint.json`), and
  * - the preview button on each pull request
- *   (`.github/workflows/pr-playground-preview.yml`), and
- * - the Live Preview on wordpress.org
- *   (`.wordpress-org/blueprints/blueprint.json`).
+ *   (`.github/workflows/pr-playground-preview.yml`).
  *
- * Change what a preview shows here, not in those three files. They only
+ * Change what a preview shows here, not in those two files. They only
  * differ in which copy of Daymark they install and where this folder ends up
  * on the preview site.
  *
- * The wordpress.org preview runs this file from `main` against the last
- * *released* Daymark, which may be older. Keep to calls that release has.
+ * The blueprint runs this file from `main` against the last *released*
+ * Daymark, which may be older. Keep to calls that release has.
  *
  * @package Daymark
  */

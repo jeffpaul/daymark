@@ -44,7 +44,7 @@
     },
     {
       "step": "runPHP",
-      "code": "<?php\nrequire_once '/wordpress/wp-load.php';\n\n// Everything the preview shows (the followed sites, the sample Marks) is set\n// up by one script, shared with the README demo and the pull request\n// previews. The released plugin does not carry it, so an earlier step copied\n// its folder here.\n$demo = WP_CONTENT_DIR . '/daymark-demo/set-up-demo.php';\nif ( file_exists( $demo ) ) {\n\trequire $demo;\n}\n"
+      "code": "<?php\nrequire_once '/wordpress/wp-load.php';\n\n// Everything the preview shows (the followed sites, the sample Marks) is set\n// up by one script, shared with the pull request previews. The released\n// plugin does not carry it, so an earlier step copied its folder here.\n$demo = WP_CONTENT_DIR . '/daymark-demo/set-up-demo.php';\nif ( file_exists( $demo ) ) {\n\trequire $demo;\n}\n"
     }
   ]
 }

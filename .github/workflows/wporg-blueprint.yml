@@ -1,21 +1,22 @@
 name: Live Preview blueprint
 
-# Runs the wordpress.org Live Preview blueprint
+# Runs the Live Preview blueprint
 # (.wordpress-org/blueprints/blueprint.json) in WordPress Playground, the
 # way the "Live Preview" button on https://wordpress.org/plugins/daymark/
-# does, and fails when the preview would not come up with its demo content.
+# and the README's "Try it" link do, and fails when the preview would not
+# come up with its demo content.
 #
 # The blueprint installs the *released* Daymark from wordpress.org and reads
 # the demo script (set-up-demo.php), the sample Marks it publishes and their
-# photos from .github/blueprints/ on `main`. So a change to a demo file reaches the public preview the moment it
-# merges, running against a release that may be older than the change. This
-# job is the guard for that: it runs the released plugin with the demo files
-# from the branch under test, which is exactly what the public gets once the
-# branch merges.
+# photos from .github/blueprints/ on `main`. So a change to a demo file
+# reaches the public preview the moment it merges, running against a release
+# that may be older than the change. This job is the guard for that: it runs
+# the released plugin with the demo files from the branch under test, which
+# is exactly what the public gets once the branch merges.
 #
-# The demo script follows four real sites, as it does for the README's "Try
-# it" demo and each pull request's preview. Whether they answer is not something a pull request can fix, so
-# the job reports how many were followed and only warns when some were not.
+# The demo script follows four real sites. Whether they answer is not
+# something a pull request can fix, so the job reports how many were
+# followed and only warns when some were not.
 #
 # It only runs when one of those files changes, because it needs
 # wordpress.org and github.com to answer and should not hold up an unrelated

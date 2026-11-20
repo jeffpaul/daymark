@@ -359,8 +359,8 @@ after merge, as a red Hooks Docs run on `main` to fix in a follow-up commit.
    try it in the pull request's Playground preview (sample photos live in
    `.github/blueprints/sample-images/`). Every preview shows the same demo,
    set up by `.github/blueprints/set-up-demo.php`. That includes the Live
-   Preview on wordpress.org, which runs it against the last *released*
-   Daymark, so keep it working there too: see
+   Preview on wordpress.org and the README's "Try it" link, which run it
+   against the last *released* Daymark, so keep it working there too: see
    [The Live Preview on wordpress.org](#the-live-preview-on-wordpressorg).
 6. **Write the description as the commit message.** Merges here are squashed
    using the PR title and description verbatim, so that text becomes
@@ -583,20 +583,23 @@ WordPress that runs in the visitor's browser. What it sets up comes from
 `.wordpress-org/blueprints/blueprint.json`, which the deploy copies to SVN as
 `assets/blueprints/blueprint.json`, the one place wordpress.org looks.
 
+The README's "Try it" link and its Playground badge open the same file,
+straight from `main`. There is one blueprint for both, so the README shows
+the released Daymark too, with the same content.
+
 The preview:
 
 - **Installs the released Daymark from wordpress.org**, so a visitor tries
-  what they would download. (The README's "Try it" link and each pull
-  request's preview button install from this repository instead, and use
-  `.github/blueprints/blueprint.json`.)
+  what they would download. To try unreleased code, use the preview button
+  on a pull request, which installs that pull request's branch.
 - **Copies `.github/blueprints/` from `main`** into the preview site, because
   the released plugin does not carry that folder.
-- **Runs `set-up-demo.php` from that copy**, the same script the README demo
-  and each pull request's preview run. It removes WordPress's "Hello world!"
-  post, follows four sites and publishes the sample Marks. To change what
-  any preview shows, change that script (or `seed-sample-content.php`, which
-  it runs for the Marks). The three previews differ only in which Daymark
-  they install.
+- **Runs `set-up-demo.php` from that copy**, the same script each pull
+  request's preview runs. It removes WordPress's "Hello world!" post, follows
+  four sites and publishes the sample Marks. To change what any preview
+  shows, change that script (or `seed-sample-content.php`, which it runs for
+  the Marks). The blueprint and the pull request previews differ only in
+  which Daymark they install.
 
 Things to know:
 
@@ -607,9 +610,10 @@ Things to know:
   files, and fails if the preview would come up without its sample Marks.
   It only warns when one of the four followed sites did not answer, since a
   pull request cannot fix someone else's site.
-- **A change to `blueprint.json` itself waits for the next release**, like any
-  other wordpress.org asset. To publish one sooner, commit that one file to
-  SVN `assets/blueprints/` by hand.
+- **A change to `blueprint.json` itself reaches the README link on merge, and
+  wordpress.org at the next release**, like any other wordpress.org asset. To
+  publish one to wordpress.org sooner, commit that one file to SVN
+  `assets/blueprints/` by hand.
 - **wordpress.org accepts one file, named `blueprint.json`, under 100 KB.**
   The step that installs Daymark names it under both `pluginData` and the
   older `pluginZipFile`. wordpress.org's importer adds an install step of
