@@ -5303,8 +5303,9 @@ a.daymark-meconn__row:focus-visible .daymark-melink__external {
 
 /* --- Search: starting screen (issue #269) --- */
 
-/* What Search shows before anything is typed or chosen: recent searches,
-   the people you follow, and your most used tags. */
+/* What Explore shows before anything is typed or chosen: recent searches,
+   Look back, the people you follow, your most used tags, and Sites you
+   might follow. */
 .daymark-searchstart {
 	display: flex;
 	flex-direction: column;
@@ -5315,16 +5316,11 @@ a.daymark-meconn__row:focus-visible .daymark-melink__external {
 	display: none;
 }
 
-/* Explore at rest: Look back, under the starting screen's recent
-   searches, people and tags. */
-.daymark-exploresections {
-	display: flex;
-	flex-direction: column;
-	gap: var(--daymark-spacing-lg);
-}
-
-.daymark-exploresections[hidden] {
-	display: none;
+/* The two parts renderStart() redraws (recent searches; people and tags),
+   either side of Look back. Their sections are spaced as the starting
+   screen's own, and an empty part takes no room. */
+.daymark-searchstart__part {
+	display: contents;
 }
 
 /* Look back: small tiles that scroll sideways, edge to edge, like the
