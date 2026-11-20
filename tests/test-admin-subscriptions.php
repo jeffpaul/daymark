@@ -147,7 +147,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	public function test_screen_and_handlers_refuse_a_role_without_manage_options( string $role ): void {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
 
-		foreach ( array( 'render_page', 'handle_privacy_save', 'handle_poll_interval_save', 'handle_unsubscribe' ) as $method ) {
+		foreach ( array( 'render_page', 'handle_privacy_save', 'handle_general_save', 'handle_unsubscribe' ) as $method ) {
 			$died = false;
 
 			try {
@@ -199,6 +199,21 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		if ( $set_tab ) {
 			unset( $_GET['tab'] );
 		}
+
+		return $output;
+	}
+
+	/**
+	 * Renders the General tab as it looks after a redirect back with a
+	 * status notice.
+	 *
+	 * @param string $notice The `daymark_notice` value in the URL.
+	 * @return string
+	 */
+	private function render_with_notice( string $notice ): string {
+		$_GET['daymark_notice'] = $notice;
+		$output                 = $this->render( 'general' );
+		unset( $_GET['daymark_notice'] );
 
 		return $output;
 	}
@@ -2366,6 +2381,108 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		delete_option( 'daymark_ai_auto_suggest' );
 	}
 
+	/**
+	 * The General tab is one form with one Save button: no section has a
+	 * form or a Save button of its own.
+	 */
+	public function test_general_tab_has_one_form_and_one_save_button(): void {
+		$output = $this->render( 'general' );
+
+		$this->assertSame( 1, substr_count( $output, '<form' ) );
+		$this->assertSame( 1, substr_count( $output, 'type="submit"' ) );
+		$this->assertStringContainsString( 'name="action" value="daymark_general_save"', $output );
+		$this->assertStringContainsString( 'value="Save changes"', $output );
+
+		// Every section's fields sit inside that form.
+		$form = substr( $output, (int) strpos( $output, '<form' ), (int) strpos( $output, '</form>' ) - (int) strpos( $output, '<form' ) );
+
+		foreach (
+			array(
+				'daymark_subscription_poll_interval',
+				'daymark_blogroll_public',
+				'daymark_announce_follows',
+				'daymark_hide_notes_on_home',
+				'daymark_bionic_reading_font',
+				'daymark_bionic_reading_font_url',
+				'daymark_compact_timeline',
+				'daymark_app_badge_unread',
+			) as $field
+		) {
+			$this->assertStringContainsString( 'name="' . $field . '"', $form, "{$field} must be inside the General form" );
+		}
+	}
+
+	/** One save stores every section's settings and returns to the General tab. */
+	public function test_general_save_stores_every_section(): void {
+		$location = $this->call_handler(
+			'handle_general_save',
+			'daymark_general_save',
+			array(
+				'daymark_subscription_poll_interval' => (string) HOUR_IN_SECONDS,
+				'daymark_blogroll_public'            => '1',
+				'daymark_hide_notes_on_home'         => '1',
+				'daymark_bionic_reading_font'        => '1',
+				'daymark_bionic_reading_font_url'    => 'https://cdn.example.com/fonts/BionicReading.woff2',
+				'daymark_compact_timeline'           => '1',
+				'daymark_app_badge_unread'           => '1',
+				// "Tell sites when you follow them" is on by default; left
+				// out here, as an unticked box is, it turns off.
+			)
+		);
+
+		$this->assertStringContainsString( 'tab=general', $location );
+		$this->assertStringContainsString( 'daymark_notice=general_saved', $location );
+		$this->assertSame( HOUR_IN_SECONDS, Daymark_Settings::poll_interval() );
+		$this->assertTrue( Daymark_Settings::blogroll_public() );
+		$this->assertFalse( Daymark_Settings::announce_follows() );
+		$this->assertTrue( Daymark_Settings::hide_notes_on_home() );
+		$this->assertTrue( Daymark_Settings::bionic_reading_font() );
+		$this->assertSame( 'https://cdn.example.com/fonts/BionicReading.woff2', Daymark_Settings::bionic_reading_font_url() );
+		$this->assertTrue( Daymark_Settings::compact_timeline() );
+		$this->assertTrue( Daymark_Settings::app_badge_unread() );
+		$this->assertStringContainsString( 'Settings saved.', $this->render_with_notice( 'general_saved' ) );
+	}
+
+	/** A ticked "Tell sites when you follow them" stays on through a save. */
+	public function test_general_save_keeps_announce_follows_on_when_ticked(): void {
+		$this->call_handler( 'handle_general_save', 'daymark_general_save', array( 'daymark_announce_follows' => '1' ) );
+
+		$this->assertTrue( Daymark_Settings::announce_follows() );
+	}
+
+	/**
+	 * A setting code has overridden is shown disabled, so the browser
+	 * doesn't send it. Saving the page leaves what was stored alone.
+	 */
+	public function test_general_save_leaves_overridden_settings_as_stored(): void {
+		update_option( 'daymark_hide_notes_on_home', '1' );
+		update_option( 'daymark_subscription_poll_interval', HOUR_IN_SECONDS );
+		$two_hours = static function (): int {
+			return 2 * HOUR_IN_SECONDS;
+		};
+		add_filter( 'daymark_hide_notes_on_home', '__return_false' );
+		add_filter( 'daymark_subscription_poll_interval', $two_hours );
+
+		$location = $this->call_handler( 'handle_general_save', 'daymark_general_save', array( 'daymark_app_badge_unread' => '1' ) );
+
+		remove_filter( 'daymark_hide_notes_on_home', '__return_false' );
+		remove_filter( 'daymark_subscription_poll_interval', $two_hours );
+
+		$this->assertStringContainsString( 'daymark_notice=general_saved', $location );
+		$this->assertSame( '1', get_option( 'daymark_hide_notes_on_home' ) );
+		$this->assertSame( HOUR_IN_SECONDS, (int) get_option( 'daymark_subscription_poll_interval' ) );
+		// The settings that aren't overridden still save.
+		$this->assertTrue( Daymark_Settings::app_badge_unread() );
+	}
+
+	/** A check frequency outside the offered choices is refused. */
+	public function test_general_save_refuses_unlisted_poll_interval(): void {
+		$location = $this->call_handler( 'handle_general_save', 'daymark_general_save', array( 'daymark_subscription_poll_interval' => '1' ) );
+
+		$this->assertStringContainsString( 'daymark_notice=error', $location );
+		$this->assertSame( DAY_IN_SECONDS, Daymark_Settings::poll_interval() );
+	}
+
 	/** The General tab offers the public blogroll setting, off by default. */
 	public function test_general_tab_renders_blogroll_setting(): void {
 		$output = $this->render( 'general' );
@@ -2377,7 +2494,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 	/** Saving the blogroll setting turns it on and returns to the General tab. */
 	public function test_blogroll_save_turns_setting_on(): void {
-		$location = $this->call_handler( 'handle_blogroll_save', 'daymark_blogroll_save', array( 'daymark_blogroll_public' => '1' ) );
+		$location = $this->call_handler( 'handle_general_save', 'daymark_general_save', array( 'daymark_blogroll_public' => '1' ) );
 
 		$this->assertStringContainsString( 'tab=general', $location );
 		$this->assertTrue( Daymark_Settings::blogroll_public() );
@@ -2396,7 +2513,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 	/** Saving the Notes setting checked turns it on and returns to the General tab. */
 	public function test_notes_save_turns_setting_on(): void {
-		$location = $this->call_handler( 'handle_notes_save', 'daymark_notes_save', array( 'daymark_hide_notes_on_home' => '1' ) );
+		$location = $this->call_handler( 'handle_general_save', 'daymark_general_save', array( 'daymark_hide_notes_on_home' => '1' ) );
 
 		$this->assertStringContainsString( 'tab=general', $location );
 		$this->assertTrue( Daymark_Settings::hide_notes_on_home() );
@@ -2416,7 +2533,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 	/** Saving the app badge setting checked turns it on and returns to the General tab. */
 	public function test_app_badge_save_turns_setting_on(): void {
-		$location = $this->call_handler( 'handle_app_badge_save', 'daymark_app_badge_save', array( 'daymark_app_badge_unread' => '1' ) );
+		$location = $this->call_handler( 'handle_general_save', 'daymark_general_save', array( 'daymark_app_badge_unread' => '1' ) );
 
 		$this->assertStringContainsString( 'tab=general', $location );
 		$this->assertTrue( Daymark_Settings::app_badge_unread() );
@@ -2445,13 +2562,13 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 	/** Saving the compact list setting checked turns it on; saving it unchecked turns it off. */
 	public function test_timeline_display_save_toggles_setting(): void {
-		$location = $this->call_handler( 'handle_timeline_display_save', 'daymark_timeline_display_save', array( 'daymark_compact_timeline' => '1' ) );
+		$location = $this->call_handler( 'handle_general_save', 'daymark_general_save', array( 'daymark_compact_timeline' => '1' ) );
 
 		$this->assertStringContainsString( 'tab=general', $location );
 		$this->assertTrue( Daymark_Settings::compact_timeline() );
 		$this->assertMatchesRegularExpression( '/name="daymark_compact_timeline"[^>]*checked/', $this->render( 'general' ) );
 
-		$this->call_handler( 'handle_timeline_display_save', 'daymark_timeline_display_save', array() );
+		$this->call_handler( 'handle_general_save', 'daymark_general_save', array() );
 		$this->assertFalse( Daymark_Settings::compact_timeline() );
 
 		delete_option( 'daymark_compact_timeline' );
@@ -2470,8 +2587,8 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	/** Saving the Reading setting stores the toggle and a valid font address. */
 	public function test_reading_font_save_turns_setting_on(): void {
 		$location = $this->call_handler(
-			'handle_reading_font_save',
-			'daymark_reading_font_save',
+			'handle_general_save',
+			'daymark_general_save',
 			array(
 				'daymark_bionic_reading_font'     => '1',
 				'daymark_bionic_reading_font_url' => 'https://cdn.example.com/fonts/BionicReading.woff2',
@@ -2479,7 +2596,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		);
 
 		$this->assertStringContainsString( 'tab=general', $location );
-		$this->assertStringContainsString( 'daymark_notice=reading_font_saved', $location );
+		$this->assertStringContainsString( 'daymark_notice=general_saved', $location );
 		$this->assertTrue( Daymark_Settings::bionic_reading_font() );
 		$this->assertSame( 'https://cdn.example.com/fonts/BionicReading.woff2', Daymark_Settings::bionic_reading_font_url() );
 		$this->assertSame( array( 'https://cdn.example.com' ), Daymark_Settings::bionic_reading_font_origins() );
@@ -2488,20 +2605,30 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		delete_option( 'daymark_bionic_reading_font_url' );
 	}
 
-	/** An address that isn't a .woff2/.woff file is refused, and nothing is saved. */
+	/**
+	 * An address that isn't a .woff2/.woff file is refused, and nothing in
+	 * the Reading section is saved. The rest of the page still is, and the
+	 * notice says so.
+	 */
 	public function test_reading_font_save_rejects_non_font_address(): void {
 		$location = $this->call_handler(
-			'handle_reading_font_save',
-			'daymark_reading_font_save',
+			'handle_general_save',
+			'daymark_general_save',
 			array(
 				'daymark_bionic_reading_font'     => '1',
 				'daymark_bionic_reading_font_url' => 'https://cdn.example.com/fonts/BionicReading.ttf',
+				'daymark_compact_timeline'        => '1',
 			)
 		);
 
 		$this->assertStringContainsString( 'daymark_notice=error', $location );
 		$this->assertFalse( Daymark_Settings::bionic_reading_font() );
 		$this->assertSame( '', Daymark_Settings::bionic_reading_font_url() );
+		$this->assertTrue( Daymark_Settings::compact_timeline() );
+
+		$notice = $this->render_with_notice( 'error' );
+		$this->assertStringContainsString( 'The web font file must be', $notice );
+		$this->assertStringContainsString( 'Your other changes were saved.', $notice );
 	}
 
 	/** A font file on the site's own origin needs no extra font-src origin. */
