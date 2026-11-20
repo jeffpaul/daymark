@@ -2,14 +2,14 @@
 /**
  * Sample Marks for WordPress Playground previews.
  *
- * Required by the public blueprint (`blueprint.json`) and the per-PR preview
- * workflow (`.github/workflows/pr-playground-preview.yml`) after WordPress is
- * loaded and Daymark is active, so a reviewer opens a Timeline that already
- * shows each Mark type and Featured Content kind instead of building them by
- * hand. Playground installs this repository as the plugin, so the sample
- * photos in `sample-images/` are on disk next to this file: no network fetch,
- * and nothing generated at run time (the old GD-generated placeholder image
- * is what once crashed Playground builds without that extension).
+ * Required by `set-up-demo.php`, the one script every Playground preview runs
+ * (the README demo, each pull request's preview and the wordpress.org Live
+ * Preview), after WordPress is loaded and Daymark is active, so a reviewer
+ * opens a Timeline that already shows each Mark type and Featured Content
+ * kind instead of building them by hand. The sample photos in
+ * `sample-images/` are on disk next to this file in every preview: no network
+ * fetch, and nothing generated at run time (the old GD-generated placeholder
+ * image is what once crashed Playground builds without that extension).
  *
  * Every Mark is created through `Daymark_Publisher::publish()`, the same path
  * the app, autosave, and the offline queue use. A failure on one sample never

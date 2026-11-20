@@ -65,27 +65,20 @@ jobs:
             throw new Error('REPO_URL and HEAD_REF are required');
           }
 
-          // Preset a few real, publicly-syndicating sites as subscriptions
-          // so a reviewer lands in a Timeline that already has content to
-          // scroll, search, and click into — not an empty "subscribe to
-          // your first site" state.
-          // Site URL => display name to store as the subscription's title
-          // (an empty name keeps the title discovery found).
-          const presetSites = {
-            'https://jeffpaul.com': 'Jeffrey Paul',
-            'https://jondesrosiers.com': '',
-            'https://aaron.jorb.in': 'Aaron Jorbin',
-            'https://xkcd.com': 'xkcd',
-          };
-
+          // Everything the preview shows (the followed sites, the sample
+          // Marks for each Mark type and Featured Content kind) is set up by
+          // one script, .github/blueprints/set-up-demo.php, shared with the
+          // README's "Try it" demo and the wordpress.org Live Preview. Change
+          // the demo there, not here.
+          //
           // runPHP steps don't auto-bootstrap WordPress — require wp-load.php
           // first, same as Playground's own documented examples. By this
           // point the preceding installPlugin step has already activated
-          // Daymark, so Daymark_Plugin::instance() is fully wired up.
-          // subscribe_to_site()/poll_subscription() are the same two calls
-          // the wp-admin Subscribe form and its background poller make;
-          // is_wp_error() is checked (not thrown on) so one unreachable site
-          // doesn't stop the others from being preset.
+          // Daymark from the PR's branch, so the script (and the sample
+          // photos next to it) is in the plugin's own folder and nothing is
+          // fetched or generated at run time. A branch that predates the
+          // script comes up without demo content until `main` is merged
+          // into it.
           //
           // Built as a joined array (not a multi-line template literal) so
           // every line of source here stays indented inside this run: |
@@ -95,28 +88,11 @@ jobs:
             '<?php',
             "require_once '/wordpress/wp-load.php';",
             '',
-            '$plugin = Daymark_Plugin::instance();',
-            '',
-            `$preset_sites = json_decode( ${JSON.stringify(JSON.stringify(presetSites))}, true );`,
-            'foreach ( $preset_sites as $site_url => $site_name ) {',
-            '\t$result = $plugin->subscriptions->subscribe_to_site( $site_url );',
-            '\tif ( ! is_wp_error( $result ) ) {',
-            "\t\tif ( '' !== $site_name ) {",
-            "\t\t\t$plugin->subscriptions->update( (int) $result, array( 'site_title' => $site_name ) );",
-            '\t\t}',
-            '\t\t$plugin->subscription_poller->poll_subscription( (int) $result );',
+            "if ( defined( 'DAYMARK_PLUGIN_FILE' ) ) {",
+            "\t$demo = dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/set-up-demo.php';",
+            '\tif ( file_exists( $demo ) ) {',
+            '\t\trequire $demo;',
             '\t}',
-            '}',
-            '',
-            // Sample Marks for each Mark type and Featured Content kind
-            // (image, gallery, Check In, and Featured Content gallery /
-            // quote / link / video). The script and its sample photos ship
-            // in the plugin checkout this preview installs, so nothing is
-            // fetched or generated at run time — see
-            // .github/blueprints/seed-sample-content.php.
-            "$seed = dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/seed-sample-content.php';",
-            'if ( file_exists( $seed ) ) {',
-            '\trequire $seed;',
             '}',
             '',
           ].join('\n');

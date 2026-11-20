@@ -6,15 +6,15 @@ name: Live Preview blueprint
 # does, and fails when the preview would not come up with its demo content.
 #
 # The blueprint installs the *released* Daymark from wordpress.org and reads
-# the sample-content script and its photos from .github/blueprints/ on
-# `main`. So a change to a demo file reaches the public preview the moment it
+# the demo script (set-up-demo.php), the sample Marks it publishes and their
+# photos from .github/blueprints/ on `main`. So a change to a demo file reaches the public preview the moment it
 # merges, running against a release that may be older than the change. This
 # job is the guard for that: it runs the released plugin with the demo files
 # from the branch under test, which is exactly what the public gets once the
 # branch merges.
 #
-# The preview also follows the four real sites the README's "Try it" demo
-# follows. Whether they answer is not something a pull request can fix, so
+# The demo script follows four real sites, as it does for the README's "Try
+# it" demo and each pull request's preview. Whether they answer is not something a pull request can fix, so
 # the job reports how many were followed and only warns when some were not.
 #
 # It only runs when one of those files changes, because it needs

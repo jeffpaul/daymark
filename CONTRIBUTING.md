@@ -357,7 +357,8 @@ after merge, as a red Hooks Docs run on `main` to fix in a follow-up commit.
    If you add a new Mark type or Featured Content kind, also add a sample
    of it to `.github/blueprints/seed-sample-content.php` so reviewers can
    try it in the pull request's Playground preview (sample photos live in
-   `.github/blueprints/sample-images/`). The same script fills the Live
+   `.github/blueprints/sample-images/`). Every preview shows the same demo,
+   set up by `.github/blueprints/set-up-demo.php`. That includes the Live
    Preview on wordpress.org, which runs it against the last *released*
    Daymark, so keep it working there too: see
    [The Live Preview on wordpress.org](#the-live-preview-on-wordpressorg).
@@ -588,12 +589,14 @@ The preview:
   what they would download. (The README's "Try it" link and each pull
   request's preview button install from this repository instead, and use
   `.github/blueprints/blueprint.json`.)
-- **Copies `.github/blueprints/` from `main`** into the preview site for its
-  demo content, because the released plugin does not carry that folder:
-  `seed-sample-content.php` publishes the sample Marks from there.
-- **Follows the same four sites as the README demo.** The list of sites is
-  written out in both `blueprint.json` files, so change them together
-  (`tests/test-wporg-blueprint.php` fails when they differ).
+- **Copies `.github/blueprints/` from `main`** into the preview site, because
+  the released plugin does not carry that folder.
+- **Runs `set-up-demo.php` from that copy**, the same script the README demo
+  and each pull request's preview run. It removes WordPress's "Hello world!"
+  post, follows four sites and publishes the sample Marks. To change what
+  any preview shows, change that script (or `seed-sample-content.php`, which
+  it runs for the Marks). The three previews differ only in which Daymark
+  they install.
 
 Things to know:
 

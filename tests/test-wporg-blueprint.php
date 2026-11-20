@@ -8,8 +8,8 @@
 /**
  * The plugin page's Live Preview runs `.wordpress-org/blueprints/blueprint.json`
  * (SVN `assets/blueprints/blueprint.json`). These tests hold it to what
- * wordpress.org accepts, and to the same demo content as the README's
- * "Try it" demo (`.github/blueprints/blueprint.json`).
+ * wordpress.org accepts, and to running the same demo script as the README's
+ * "Try it" demo (see tests/test-playground-blueprint.php for the script).
  */
 class Test_Wporg_Blueprint extends WP_UnitTestCase {
 
@@ -94,9 +94,10 @@ class Test_Wporg_Blueprint extends WP_UnitTestCase {
 	/**
 	 * The released plugin does not carry the demo files, so the blueprint
 	 * copies this repository's `.github/blueprints/` folder onto the preview
-	 * site and runs the sample-content script from the copy.
+	 * site and runs the shared demo script from the copy. That one step is
+	 * all its PHP does.
 	 */
-	public function test_blueprint_reads_demo_files_that_exist(): void {
+	public function test_blueprint_copies_the_demo_files_then_runs_the_shared_script(): void {
 		$writes = $this->steps( 'writeFiles' );
 
 		$this->assertCount( 1, $writes );
@@ -109,71 +110,14 @@ class Test_Wporg_Blueprint extends WP_UnitTestCase {
 		$run = $this->steps( 'runPHP' );
 
 		$this->assertCount( 1, $run );
-		$this->assertStringContainsString( "WP_CONTENT_DIR . '/daymark-demo/seed-sample-content.php'", (string) $run[0]['code'] );
-		$this->assertFileExists( $this->repo_path( '.github/blueprints/seed-sample-content.php' ) );
+		$this->assertStringContainsString( "WP_CONTENT_DIR . '/daymark-demo/set-up-demo.php'", (string) $run[0]['code'] );
+		$this->assertFileExists( $this->repo_path( '.github/blueprints/set-up-demo.php' ) );
 
-		// The copy has to be in place before the step that runs it.
+		// The plugin and the copy have to be in place before the step that
+		// runs the script.
 		$order = array_column( (array) $this->blueprint()['steps'], 'step' );
 
 		$this->assertLessThan( array_search( 'runPHP', $order, true ), array_search( 'writeFiles', $order, true ) );
 		$this->assertLessThan( array_search( 'runPHP', $order, true ), array_search( 'installPlugin', $order, true ) );
-	}
-
-	/**
-	 * The preview follows the same sites, under the same names and in the
-	 * same way, as the README's "Try it" demo. The two files each carry
-	 * the list, so this fails when one is changed without the other.
-	 */
-	public function test_blueprint_follows_the_same_sites_as_the_readme_demo(): void {
-		$readme = json_decode(
-			(string) file_get_contents( $this->repo_path( '.github/blueprints/blueprint.json' ) ), // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local repository file.
-			true
-		);
-
-		$this->assertIsArray( $readme );
-
-		$readme_code = '';
-
-		foreach ( (array) $readme['steps'] as $step ) {
-			if ( 'runPHP' === ( $step['step'] ?? '' ) ) {
-				$readme_code = (string) $step['code'];
-			}
-		}
-
-		$code   = (string) $this->steps( 'runPHP' )[0]['code'];
-		$ours   = $this->follow_code( $code );
-		$theirs = $this->follow_code( $readme_code );
-
-		$this->assertNotSame( '', $theirs );
-		$this->assertSame( $theirs, $ours );
-		$this->assertSame( 4, substr_count( $ours, "'https://" ) );
-		$this->assertStringContainsString( 'subscribe_to_site( $site_url )', $ours );
-		$this->assertStringContainsString( 'poll_subscription(', $ours );
-	}
-
-	/**
-	 * A new WordPress comes with a "Hello world!" post, which would sit at
-	 * the top of the Timeline. The blueprint takes it out.
-	 */
-	public function test_blueprint_removes_the_hello_world_post(): void {
-		$code = (string) $this->steps( 'runPHP' )[0]['code'];
-
-		$this->assertStringContainsString( "get_page_by_path( 'hello-world', OBJECT, 'post' )", $code );
-		$this->assertStringContainsString( 'wp_delete_post( $hello->ID, true )', $code );
-	}
-
-	/**
-	 * The part of a blueprint's PHP that lists the sites and follows them:
-	 * from the list to the end of the loop over it.
-	 *
-	 * @param string $code A `runPHP` step's code.
-	 * @return string The code, or an empty string when it is not there.
-	 */
-	private function follow_code( string $code ): string {
-		if ( ! preg_match( '/\$preset_sites = \[.*?\n\];.*?\nforeach \( \$preset_sites as .*?\n}\n/s', $code, $match ) ) {
-			return '';
-		}
-
-		return $match[0];
 	}
 }
