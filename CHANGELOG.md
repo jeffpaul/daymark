@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Changed
+
+- On Explore, Look back now sits just above the People row, so your own memories are the first thing under the search box (and under your recent searches, when you have any) without scrolling past People and Your tags. ([#634](https://github.com/jeffpaul/daymark/pull/634))
+
 ### Fixed
 
 - Daymark's page on wordpress.org no longer cuts off its description and its changelog. Both were longer than wordpress.org shows, so the list of outside services stopped partway through and the changelog stopped inside an older release. The details of what your site sends to sites you follow now sit in the FAQ, and the changelog lists the three most recent releases. ([#630](https://github.com/jeffpaul/daymark/pull/630))
