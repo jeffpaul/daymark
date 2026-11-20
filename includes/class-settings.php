@@ -102,22 +102,25 @@ final class Daymark_Settings {
 	public const DEFAULT_CATEGORIES = 'daymark_default_categories';
 
 	/**
-	 * Option: show the app's text in the Bionic Reading font.
+	 * Option: the font the app shows its text in, as the slug of a font in
+	 * the site's Font Library. Empty means Daymark's usual font.
 	 */
-	public const BIONIC_READING_FONT = 'daymark_bionic_reading_font';
+	public const APP_FONT = 'daymark_app_font';
 
 	/**
-	 * Option: the address of the site's own licensed Bionic Reading web
-	 * font file (.woff2 or .woff). Empty means "use the font if the
-	 * reader's device has it installed".
+	 * Options of the Bionic Reading setting (0.21.0 to 0.23.0), which
+	 * migrate_bionic_reading_font() moves to APP_FONT and deletes.
 	 */
-	public const BIONIC_READING_FONT_URL = 'daymark_bionic_reading_font_url';
+	private const LEGACY_BIONIC_OPTIONS = array(
+		'daymark_bionic_reading_font',
+		'daymark_bionic_reading_font_url',
+		'daymark_bionic_reading_font_family',
+	);
 
 	/**
-	 * Option: the Font Library family (wp_font_family post ID) to use for
-	 * the Bionic Reading font. 0 means the newest matching family.
+	 * How many Font Library families the font setting lists.
 	 */
-	public const BIONIC_READING_FONT_FAMILY = 'daymark_bionic_reading_font_family';
+	private const MAX_FONT_FAMILIES = 200;
 
 	/**
 	 * Destinations a type starts with before anyone has set site defaults.
@@ -150,9 +153,7 @@ final class Daymark_Settings {
 			self::APP_BADGE,
 			self::DEFAULT_DESTINATIONS,
 			self::DEFAULT_CATEGORIES,
-			self::BIONIC_READING_FONT,
-			self::BIONIC_READING_FONT_URL,
-			self::BIONIC_READING_FONT_FAMILY,
+			self::APP_FONT,
 		);
 	}
 
@@ -532,201 +533,317 @@ final class Daymark_Settings {
 	}
 
 	/**
-	 * Whether the app shows its text in the Bionic Reading font
-	 * (https://bionic-reading.com/). Off by default.
+	 * The font the app shows its text in: the slug of a font in the site's
+	 * Font Library, or '' for Daymark's usual font. A stored font that is no
+	 * longer in the Font Library counts as ''.
 	 *
-	 * Daymark can't ship the font: it is a paid product whose license
-	 * forbids passing it on. The app uses a "Bionic Reading" family from
-	 * the site's Font Library when there is one, else the web font file
-	 * address when one is set, else the font installed on the reader's
-	 * device, else its usual system font (bionic_reading_font_faces()).
-	 *
-	 * @since 0.21.0
-	 *
-	 * @return bool
-	 */
-	public static function bionic_reading_font(): bool {
-		/**
-		 * Whether the Daymark app uses the Bionic Reading font.
-		 *
-		 * Defaults to the `daymark_bionic_reading_font` option (Settings ->
-		 * Daymark -> General, off by default).
-		 *
-		 * @since 0.21.0
-		 *
-		 * @param bool $enabled Defaults to the `daymark_bionic_reading_font` option.
-		 */
-		return (bool) apply_filters( 'daymark_bionic_reading_font', (bool) get_option( self::BIONIC_READING_FONT, false ) );
-	}
-
-	/**
-	 * The site's own Bionic Reading web font file, or '' for none.
-	 *
-	 * @since 0.21.0
+	 * @since 0.24.0
 	 *
 	 * @return string
 	 */
-	public static function bionic_reading_font_url(): string {
+	public static function app_font(): string {
 		/**
-		 * Filters the address of the Bionic Reading web font file.
+		 * Filters which Font Library font the Daymark app shows its text in.
 		 *
-		 * Defaults to the `daymark_bionic_reading_font_url` option. The
-		 * value is checked again after the filter, so it must still be an
-		 * http(s) address of a .woff2 or .woff file.
+		 * Defaults to the `daymark_app_font` option (Settings -> Daymark ->
+		 * General). Return a font's slug, as the Font Library has it (an
+		 * installed family or one of the theme's), or '' for Daymark's
+		 * usual font. A slug the Font Library doesn't have counts as ''.
 		 *
-		 * @since 0.21.0
+		 * @since 0.24.0
 		 *
-		 * @param string $url Defaults to the `daymark_bionic_reading_font_url` option.
+		 * @param string $slug Defaults to the `daymark_app_font` option.
 		 */
-		$url = apply_filters( 'daymark_bionic_reading_font_url', (string) get_option( self::BIONIC_READING_FONT_URL, '' ) );
+		$slug = apply_filters( 'daymark_app_font', (string) get_option( self::APP_FONT, '' ) );
+		$slug = is_string( $slug ) ? sanitize_title( $slug ) : '';
 
-		return self::sanitize_font_url( is_string( $url ) ? $url : '' );
+		return '' !== $slug && null !== self::find_font( $slug ) ? $slug : '';
 	}
 
 	/**
-	 * An http(s) address of a font file, or ''.
+	 * The chosen font's CSS font-family list, or '' for Daymark's usual
+	 * font. Only font names: each one is either a bare keyword or a quoted
+	 * string (font_stack()).
 	 *
-	 * @since 0.21.0
+	 * @since 0.24.0
 	 *
-	 * @param string $url        Address to check.
-	 * @param bool   $any_format Also allow .ttf and .otf, which the Font
-	 *                           Library accepts. The Bionic Reading Web
-	 *                           license only covers .woff2 and .woff.
 	 * @return string
 	 */
-	public static function sanitize_font_url( string $url, bool $any_format = false ): string {
-		$url = esc_url_raw( trim( $url ), array( 'http', 'https' ) );
+	public static function app_font_stack(): string {
+		$font = self::chosen_font();
 
-		if ( '' === $url ) {
-			return '';
-		}
-
-		$path = (string) wp_parse_url( $url, PHP_URL_PATH );
-
-		$pattern = $any_format ? '/\.(woff2?|ttf|otf)$/i' : '/\.woff2?$/i';
-
-		return preg_match( $pattern, $path ) ? $url : '';
+		return $font ? $font['family'] : '';
 	}
 
 	/**
-	 * The Font Library families (Appearance -> Editor -> Typography) whose
-	 * name contains "Bionic Reading", newest first.
+	 * The font files the app loads for the chosen font, as FontFace
+	 * sources. Empty when no font is chosen, or the font has no files (a
+	 * theme font that is only a list of device fonts).
 	 *
-	 * @since 0.21.0
+	 * @since 0.24.0
 	 *
-	 * @return array<int, string> Family post ID => family name.
+	 * @return array<int, array{src: string, style: string, weight: string, unicodeRange?: string}>
 	 */
-	public static function font_library_families(): array {
-		$posts = get_posts(
-			array(
-				'post_type'   => 'wp_font_family',
-				'post_status' => 'publish',
-				'numberposts' => 50,
-				'orderby'     => 'date',
-				'order'       => 'DESC',
-			)
-		);
+	public static function app_font_faces(): array {
+		$font = self::chosen_font();
 
-		$families = array();
+		return $font ? $font['faces'] : array();
+	}
 
-		foreach ( $posts as $post ) {
-			$name = (string) $post->post_title;
+	/**
+	 * The origins the app shell's font-src must allow for the chosen font's
+	 * files. Files on this site's own origin need none.
+	 *
+	 * @since 0.24.0
+	 *
+	 * @return string[] Origins, e.g. "https://cdn.example.com".
+	 */
+	public static function app_font_origins(): array {
+		$self    = self::origin_of( home_url() );
+		$origins = array();
 
-			if ( preg_match( '/bionic\s*-?\s*reading/i', $name . ' ' . $post->post_name ) ) {
-				$families[ (int) $post->ID ] = $name;
+		foreach ( self::app_font_faces() as $face ) {
+			$origin = self::origin_of( $face['src'] );
+
+			if ( '' !== $origin && $origin !== $self ) {
+				$origins[] = $origin;
 			}
 		}
 
-		return $families;
+		return array_values( array_unique( $origins ) );
 	}
 
 	/**
-	 * The Font Library family the app uses: the one chosen on Settings ->
-	 * Daymark when it still exists, else the newest "Bionic Reading"
-	 * family, else 0 for none.
+	 * Every font in the site's Font Library, in name order: the families
+	 * installed there (Appearance -> Fonts) and the active theme's own
+	 * fonts. An installed family wins over a theme font with the same slug.
 	 *
-	 * @since 0.21.0
+	 * @since 0.24.0
 	 *
-	 * @return int Family post ID.
+	 * @return array<string, string> Font slug => font name.
 	 */
-	public static function bionic_reading_font_family(): int {
-		$families = self::font_library_families();
-		$chosen   = (int) get_option( self::BIONIC_READING_FONT_FAMILY, 0 );
+	public static function font_library_fonts(): array {
+		$fonts = array();
 
-		/**
-		 * Filters which Font Library family Daymark uses for the Bionic
-		 * Reading font. Return 0 to skip the Font Library.
-		 *
-		 * @since 0.21.0
-		 *
-		 * @param int             $family_id Chosen family post ID; 0 picks the newest match.
-		 * @param array<int, string> $families Matching families, ID => name.
-		 */
-		$chosen = (int) apply_filters( 'daymark_bionic_reading_font_family', $chosen ? $chosen : (int) array_key_first( $families ), $families );
-
-		return isset( $families[ $chosen ] ) ? $chosen : 0;
-	}
-
-	/**
-	 * The font files the app loads for the Bionic Reading font, as
-	 * FontFace sources. A Font Library family wins; otherwise the web font
-	 * file address, if any. Empty when the setting is off or there's no
-	 * file, in which case the app relies on a copy installed on the device.
-	 *
-	 * @since 0.21.0
-	 *
-	 * @return array<int, array{src: string, style: string, weight: string}>
-	 */
-	public static function bionic_reading_font_faces(): array {
-		if ( ! self::bionic_reading_font() ) {
-			return array();
+		foreach ( self::installed_font_posts() as $post ) {
+			$fonts[ (string) $post->post_name ] = self::font_name( (string) $post->post_title, (string) $post->post_name );
 		}
 
-		$family = self::bionic_reading_font_family();
-
-		if ( $family ) {
-			$faces = self::font_library_faces( $family );
-
-			if ( $faces ) {
-				return $faces;
+		foreach ( self::theme_font_families() as $slug => $definition ) {
+			if ( ! isset( $fonts[ $slug ] ) ) {
+				$fonts[ $slug ] = self::font_name( isset( $definition['name'] ) && is_string( $definition['name'] ) ? $definition['name'] : '', $slug );
 			}
 		}
 
-		$url = self::bionic_reading_font_url();
+		natcasesort( $fonts );
 
-		return '' === $url ? array() : array(
-			array(
-				'src'    => $url,
-				'style'  => 'normal',
-				'weight' => '400',
-			),
+		return $fonts;
+	}
+
+	/**
+	 * The chosen font's details, or null for Daymark's usual font.
+	 *
+	 * @return array{name: string, family: string, faces: array}|null
+	 */
+	private static function chosen_font(): ?array {
+		$slug = self::app_font();
+
+		return '' === $slug ? null : self::find_font( $slug );
+	}
+
+	/**
+	 * One Font Library font by slug: its name, CSS font-family list, and
+	 * font files. An installed family is looked for first, then the
+	 * theme's fonts.
+	 *
+	 * @param string $slug Font slug.
+	 * @return array{name: string, family: string, faces: array}|null
+	 */
+	private static function find_font( string $slug ): ?array {
+		foreach ( self::installed_font_posts( $slug ) as $post ) {
+			$settings = json_decode( (string) $post->post_content, true );
+			$name     = self::font_name( (string) $post->post_title, $slug );
+			$faces    = array();
+
+			foreach ( self::installed_font_face_posts( (int) $post->ID ) as $face_post ) {
+				$face = json_decode( (string) $face_post->post_content, true );
+
+				if ( is_array( $face ) ) {
+					$faces[] = $face;
+				}
+			}
+
+			return array(
+				'name'   => $name,
+				'family' => self::font_stack( is_array( $settings ) && isset( $settings['fontFamily'] ) && is_string( $settings['fontFamily'] ) ? $settings['fontFamily'] : '', $name ),
+				'faces'  => self::font_faces( $faces ),
+			);
+		}
+
+		$theme_fonts = self::theme_font_families();
+
+		if ( ! isset( $theme_fonts[ $slug ] ) ) {
+			return null;
+		}
+
+		$definition = $theme_fonts[ $slug ];
+		$name       = self::font_name( isset( $definition['name'] ) && is_string( $definition['name'] ) ? $definition['name'] : '', $slug );
+
+		return array(
+			'name'   => $name,
+			'family' => self::font_stack( isset( $definition['fontFamily'] ) && is_string( $definition['fontFamily'] ) ? $definition['fontFamily'] : '', $name ),
+			'faces'  => self::font_faces( isset( $definition['fontFace'] ) && is_array( $definition['fontFace'] ) ? $definition['fontFace'] : array() ),
 		);
 	}
 
 	/**
-	 * A Font Library family's faces, read from its wp_font_face posts. Each
-	 * face's settings are JSON in post_content (fontStyle, fontWeight, src).
+	 * The families installed in the Font Library (wp_font_family posts),
+	 * or just the one with this slug.
+	 *
+	 * @param string $slug Optional. Only the family with this slug.
+	 * @return WP_Post[]
+	 */
+	private static function installed_font_posts( string $slug = '' ): array {
+		$args = array(
+			'post_type'   => 'wp_font_family',
+			'post_status' => 'publish',
+			'numberposts' => self::MAX_FONT_FAMILIES,
+			'orderby'     => 'title',
+			'order'       => 'ASC',
+		);
+
+		if ( '' !== $slug ) {
+			$args['name']        = $slug;
+			$args['numberposts'] = 1;
+		}
+
+		return get_posts( $args );
+	}
+
+	/**
+	 * An installed family's faces (its wp_font_face posts). Each face's
+	 * settings are JSON in post_content (fontStyle, fontWeight, src).
 	 *
 	 * @param int $family_id Family post ID.
-	 * @return array<int, array{src: string, style: string, weight: string}>
+	 * @return WP_Post[]
 	 */
-	private static function font_library_faces( int $family_id ): array {
-		$posts = get_posts(
+	private static function installed_font_face_posts( int $family_id ): array {
+		return get_posts(
 			array(
 				'post_type'   => 'wp_font_face',
 				'post_status' => 'publish',
 				'post_parent' => $family_id,
-				'numberposts' => 50,
+				'numberposts' => 100,
 				'orderby'     => 'ID',
 				'order'       => 'ASC',
 			)
 		);
+	}
 
-		$faces = array();
+	/**
+	 * The fonts the active theme and its styles register (theme.json's
+	 * settings.typography.fontFamilies, plus the fonts switched on in the
+	 * Site Editor), by slug. The first definition of a slug wins.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	private static function theme_font_families(): array {
+		$origins = function_exists( 'wp_get_global_settings' ) ? wp_get_global_settings( array( 'typography', 'fontFamilies' ) ) : array();
+		$fonts   = array();
 
-		foreach ( $posts as $post ) {
-			$settings = json_decode( (string) $post->post_content, true );
+		if ( ! is_array( $origins ) ) {
+			return $fonts;
+		}
 
+		// "custom" holds what the site owner switched on, so it goes first.
+		foreach ( array( 'custom', 'theme', 'default' ) as $origin ) {
+			if ( empty( $origins[ $origin ] ) || ! is_array( $origins[ $origin ] ) ) {
+				continue;
+			}
+
+			foreach ( $origins[ $origin ] as $definition ) {
+				if ( ! is_array( $definition ) || empty( $definition['slug'] ) || ! is_string( $definition['slug'] ) ) {
+					continue;
+				}
+
+				$slug = sanitize_title( $definition['slug'] );
+
+				if ( '' !== $slug && ! isset( $fonts[ $slug ] ) ) {
+					$fonts[ $slug ] = $definition;
+				}
+			}
+		}
+
+		return $fonts;
+	}
+
+	/**
+	 * A font's display name, or its slug when it has none.
+	 *
+	 * @param string $name Name as stored.
+	 * @param string $slug Font slug.
+	 * @return string
+	 */
+	private static function font_name( string $name, string $slug ): string {
+		$name = trim( sanitize_text_field( $name ) );
+
+		return '' !== $name ? $name : $slug;
+	}
+
+	/**
+	 * A CSS font-family list holding only font names, built from a font's
+	 * stored `fontFamily` value (font_stack_name() checks each one). Falls
+	 * back to the font's own name when nothing usable is left.
+	 *
+	 * @param string $family   The stored value, e.g. `"Inter", sans-serif`.
+	 * @param string $fallback Font name to use when nothing is left.
+	 * @return string
+	 */
+	private static function font_stack( string $family, string $fallback ): string {
+		$names = array_filter( array_map( array( __CLASS__, 'font_stack_name' ), explode( ',', $family ) ), 'strlen' );
+
+		if ( ! $names ) {
+			$names = array_filter( array( self::font_stack_name( '"' . $fallback . '"' ) ), 'strlen' );
+		}
+
+		return implode( ', ', array_slice( array_values( array_unique( $names ) ), 0, 20 ) );
+	}
+
+	/**
+	 * One entry of a CSS font-family list, or '' when it isn't a font
+	 * name. A single unquoted word (serif, system-ui, -apple-system,
+	 * Georgia) stays a bare keyword. Anything else must be letters,
+	 * digits, spaces, and a little punctuation, and comes back as a quoted
+	 * string, so nothing here can end the string or the declaration.
+	 *
+	 * @param string $item One comma-separated entry.
+	 * @return string
+	 */
+	private static function font_stack_name( string $item ): string {
+		$item = trim( $item );
+		$wide = array( 'inherit', 'initial', 'unset', 'revert', 'revert-layer', 'default' );
+
+		if ( preg_match( '/^-?[A-Za-z][A-Za-z0-9-]*$/', $item ) && ! in_array( strtolower( $item ), $wide, true ) ) {
+			return $item;
+		}
+
+		$name = trim( $item, " \t\n\r\"'" );
+
+		return '' !== $name && preg_match( '/^[\p{L}\p{N} _.-]+$/u', $name ) ? '"' . $name . '"' : '';
+	}
+
+	/**
+	 * Font Library face settings as FontFace sources the app can load:
+	 * the first usable file of each face, with a checked style, weight,
+	 * and unicode range. A theme's `file:./` path becomes the theme's URL.
+	 *
+	 * @param array<int, mixed> $faces Face settings (src, fontStyle, fontWeight, unicodeRange).
+	 * @return array<int, array{src: string, style: string, weight: string, unicodeRange?: string}>
+	 */
+	private static function font_faces( array $faces ): array {
+		$out = array();
+
+		foreach ( $faces as $settings ) {
 			if ( ! is_array( $settings ) ) {
 				continue;
 			}
@@ -735,7 +852,15 @@ final class Daymark_Settings {
 			$src     = '';
 
 			foreach ( $sources as $candidate ) {
-				$src = is_string( $candidate ) ? self::sanitize_font_url( $candidate, true ) : '';
+				if ( ! is_string( $candidate ) ) {
+					continue;
+				}
+
+				if ( str_starts_with( $candidate, 'file:./' ) ) {
+					$candidate = get_theme_file_uri( substr( $candidate, strlen( 'file:./' ) ) );
+				}
+
+				$src = self::sanitize_font_url( $candidate );
 
 				if ( '' !== $src ) {
 					break;
@@ -746,40 +871,90 @@ final class Daymark_Settings {
 				continue;
 			}
 
-			$style  = isset( $settings['fontStyle'] ) && in_array( $settings['fontStyle'], array( 'normal', 'italic', 'oblique' ), true ) ? $settings['fontStyle'] : 'normal';
-			$weight = isset( $settings['fontWeight'] ) && preg_match( '/^\d{1,4}(\s+\d{1,4})?$|^(normal|bold)$/', (string) $settings['fontWeight'] ) ? (string) $settings['fontWeight'] : '400';
-
-			$faces[] = array(
+			$face = array(
 				'src'    => $src,
-				'style'  => $style,
-				'weight' => $weight,
+				'style'  => isset( $settings['fontStyle'] ) && in_array( $settings['fontStyle'], array( 'normal', 'italic', 'oblique' ), true ) ? $settings['fontStyle'] : 'normal',
+				'weight' => isset( $settings['fontWeight'] ) && preg_match( '/^\d{1,4}(\s+\d{1,4})?$|^(normal|bold)$/', (string) $settings['fontWeight'] ) ? (string) $settings['fontWeight'] : '400',
 			);
+
+			if ( isset( $settings['unicodeRange'] ) && is_string( $settings['unicodeRange'] ) && preg_match( '/^U\+[0-9A-F?]{1,6}(-[0-9A-F]{1,6})?(\s*,\s*U\+[0-9A-F?]{1,6}(-[0-9A-F]{1,6})?)*$/i', trim( $settings['unicodeRange'] ) ) ) {
+				$face['unicodeRange'] = trim( $settings['unicodeRange'] );
+			}
+
+			$out[] = $face;
 		}
 
-		return $faces;
+		return $out;
 	}
 
 	/**
-	 * The origins the app shell's font-src must allow for the Bionic
-	 * Reading font files. Files on this site's own origin need none.
+	 * An http(s) address of a font file (.woff2, .woff, .ttf or .otf, the
+	 * formats the Font Library takes), or ''.
 	 *
 	 * @since 0.21.0
+	 * @since 0.24.0 The `$any_format` parameter is gone; all four formats are always allowed.
 	 *
-	 * @return string[] Origins, e.g. "https://cdn.example.com".
+	 * @param string $url Address to check.
+	 * @return string
 	 */
-	public static function bionic_reading_font_origins(): array {
-		$self    = self::origin_of( home_url() );
-		$origins = array();
+	public static function sanitize_font_url( string $url ): string {
+		$url = esc_url_raw( trim( $url ), array( 'http', 'https' ) );
 
-		foreach ( self::bionic_reading_font_faces() as $face ) {
-			$origin = self::origin_of( $face['src'] );
+		if ( '' === $url ) {
+			return '';
+		}
 
-			if ( '' !== $origin && $origin !== $self ) {
-				$origins[] = $origin;
+		return preg_match( '/\.(woff2?|ttf|otf)$/i', (string) wp_parse_url( $url, PHP_URL_PATH ) ) ? $url : '';
+	}
+
+	/**
+	 * Move a site off the Bionic Reading setting (0.21.0 to 0.23.0), which
+	 * the Font Library font setting replaced. Runs on `init`.
+	 *
+	 * A site that had the setting on and was showing a "Bionic Reading"
+	 * family from its Font Library keeps that family, now as its chosen
+	 * app font, so nothing changes on screen. A site that used a web font
+	 * file address or a copy on the reader's device (both gone), or had
+	 * the setting off, shows Daymark's usual font. The three old options
+	 * are deleted either way, which is also what makes this run only once:
+	 * after that it is three lookups of options that don't exist.
+	 *
+	 * @since 0.24.0
+	 *
+	 * @return void
+	 */
+	public static function migrate_bionic_reading_font(): void {
+		list( $on_option, $url_option, $family_option ) = self::LEGACY_BIONIC_OPTIONS;
+
+		$on     = get_option( $on_option, null );
+		$family = get_option( $family_option, null );
+
+		if ( null === $on && null === $family && null === get_option( $url_option, null ) ) {
+			return;
+		}
+
+		// -1 was "Don't use the Font Library".
+		if ( $on && (int) $family >= 0 && '' === (string) get_option( self::APP_FONT, '' ) ) {
+			$matches = array();
+
+			foreach ( self::installed_font_posts() as $post ) {
+				if ( preg_match( '/bionic\s*-?\s*reading/i', $post->post_title . ' ' . $post->post_name ) ) {
+					$matches[ (int) $post->ID ] = $post;
+				}
+			}
+
+			// The family picked by hand, else the newest match, as before.
+			krsort( $matches );
+			$post = $matches[ (int) $family ] ?? reset( $matches );
+
+			if ( $post instanceof WP_Post && '' !== $post->post_name ) {
+				update_option( self::APP_FONT, $post->post_name );
 			}
 		}
 
-		return array_values( array_unique( $origins ) );
+		foreach ( self::LEGACY_BIONIC_OPTIONS as $option ) {
+			delete_option( $option );
+		}
 	}
 
 	/**

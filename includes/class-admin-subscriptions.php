@@ -729,8 +729,8 @@ class Daymark_Admin_Subscriptions {
 			<?php $this->render_publishing_defaults_form(); ?>
 			<h2><?php esc_html_e( 'Notes', 'daymark' ); ?></h2>
 			<?php $this->render_notes_form(); ?>
-			<h2><?php esc_html_e( 'Reading', 'daymark' ); ?></h2>
-			<?php $this->render_reading_font_form(); ?>
+			<h2><?php esc_html_e( 'Font', 'daymark' ); ?></h2>
+			<?php $this->render_app_font_form(); ?>
 			<h2><?php esc_html_e( 'Timeline', 'daymark' ); ?></h2>
 			<?php $this->render_timeline_display_form(); ?>
 			<h2><?php esc_html_e( 'App icon', 'daymark' ); ?></h2>
@@ -3916,112 +3916,90 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * The Reading setting: whether the app shows its text in the Bionic
-	 * Reading font, which Font Library family supplies it, and an optional
-	 * address of the site's own licensed web font file. Off by default.
+	 * The Font setting: which font from the site's Font Library the app
+	 * shows its text in. Daymark's usual font unless one is chosen.
 	 *
-	 * @since 0.21.0
+	 * @since 0.24.0
 	 *
 	 * @return void
 	 */
-	private function render_reading_font_form(): void {
-		$stored         = (bool) get_option( Daymark_Settings::BIONIC_READING_FONT, false );
-		$effective      = Daymark_Settings::bionic_reading_font();
-		$overridden     = $stored !== $effective;
-		$stored_url     = Daymark_Settings::sanitize_font_url( (string) get_option( Daymark_Settings::BIONIC_READING_FONT_URL, '' ) );
-		$effective_url  = Daymark_Settings::bionic_reading_font_url();
-		$url_overridden = $stored_url !== $effective_url;
-		$families       = Daymark_Settings::font_library_families();
-		$family         = Daymark_Settings::bionic_reading_font_family();
-		$stored_family  = (int) get_option( Daymark_Settings::BIONIC_READING_FONT_FAMILY, 0 );
+	private function render_app_font_form(): void {
+		$fonts      = Daymark_Settings::font_library_fonts();
+		$effective  = Daymark_Settings::app_font();
+		$overridden = self::stored_app_font( $fonts ) !== $effective;
 		?>
 		<p>
-			<label>
-				<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::BIONIC_READING_FONT ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
-				<?php
+			<label for="daymark-app-font"><?php esc_html_e( 'Show Daymark\'s text in', 'daymark' ); ?></label><br />
+			<select id="daymark-app-font" name="<?php echo esc_attr( Daymark_Settings::APP_FONT ); ?>"<?php disabled( $overridden ); ?>>
+				<option value=""<?php selected( $effective, '' ); ?>><?php esc_html_e( 'Daymark\'s usual font', 'daymark' ); ?></option>
+				<?php foreach ( $fonts as $slug => $name ) : ?>
+					<option value="<?php echo esc_attr( $slug ); ?>"<?php selected( $effective, $slug ); ?>><?php echo esc_html( $name ); ?></option>
+				<?php endforeach; ?>
+			</select>
+		</p>
+		<p class="description">
+			<?php
+			if ( $fonts ) {
+				esc_html_e( 'Pick any font in your site\'s Font Library, and the Daymark app shows its text in it. Your site\'s own pages keep the fonts your theme gives them.', 'daymark' );
+			} else {
+				esc_html_e( 'Your site\'s Font Library has no fonts yet. Add one, and you can pick it here for the Daymark app.', 'daymark' );
+			}
+
+			if ( current_user_can( 'edit_theme_options' ) ) {
 				printf(
-					/* translators: %s: link to the Bionic Reading website. */
-					esc_html__( 'Show Daymark\'s text in the %s font', 'daymark' ),
-					'<a href="https://bionic-reading.com/" target="_blank" rel="noopener noreferrer">Bionic Reading</a>'
+					' <a href="%1$s">%2$s</a>',
+					esc_url( admin_url( 'font-library.php' ) ),
+					esc_html__( 'Add or remove fonts', 'daymark' )
 				);
-				?>
-			</label>
-		</p>
-		<p class="description">
-			<?php esc_html_e( 'Bionic Reading makes the start of each word bold, which helps some people read faster. The font is sold by Bionic Reading, and Daymark can\'t include it. Daymark uses your site\'s own copy of the font if it has one. Otherwise it uses the font on devices where it is installed, and the usual font everywhere else.', 'daymark' ); ?>
-		</p>
-		<?php if ( $families ) : ?>
-			<p>
-				<label for="daymark-bionic-reading-font-family"><?php esc_html_e( 'Font Library family', 'daymark' ); ?></label><br />
-				<select id="daymark-bionic-reading-font-family" name="<?php echo esc_attr( Daymark_Settings::BIONIC_READING_FONT_FAMILY ); ?>">
-					<?php foreach ( $families as $family_id => $family_name ) : ?>
-						<option value="<?php echo esc_attr( (string) $family_id ); ?>" <?php selected( $family, $family_id ); ?>><?php echo esc_html( $family_name ); ?></option>
-					<?php endforeach; ?>
-					<option value="-1" <?php selected( 0 === $family && $stored_family < 0 ); ?>><?php esc_html_e( 'Don\'t use the Font Library', 'daymark' ); ?></option>
-				</select>
-			</p>
-			<p class="description">
-				<?php esc_html_e( 'Daymark found the font in your site\'s Font Library and uses those files. The web font file below is only used when no Font Library family is chosen.', 'daymark' ); ?>
-			</p>
-		<?php else : ?>
-			<p class="description">
-				<?php esc_html_e( 'If you upload the font to your site\'s Font Library (in the Site Editor, under Styles, then Typography), Daymark finds and uses it here. A family whose name contains "Bionic Reading" is picked up.', 'daymark' ); ?>
-			</p>
-		<?php endif; ?>
-		<p>
-			<label for="daymark-bionic-reading-font-url"><?php esc_html_e( 'Web font file (optional)', 'daymark' ); ?></label><br />
-			<input type="url" class="regular-text code" id="daymark-bionic-reading-font-url" name="<?php echo esc_attr( Daymark_Settings::BIONIC_READING_FONT_URL ); ?>" value="<?php echo esc_attr( $effective_url ); ?>" placeholder="https://" <?php disabled( $url_overridden ); ?> />
-		</p>
-		<p class="description">
-			<?php esc_html_e( 'The address of a .woff2 or .woff file of the font, on a server you control. Bionic Reading\'s Web license allows this; its personal license does not.', 'daymark' ); ?>
+			}
+			?>
 		</p>
 		<?php if ( $overridden ) : ?>
-			<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+			<p class="description"><?php esc_html_e( 'Chosen by code on this site, so it can\'t be changed here.', 'daymark' ); ?></p>
 		<?php endif; ?>
 		<?php
 	}
 
 	/**
-	 * Save the Reading setting, as part of handle_general_save(). A value
-	 * a filter overrides is left as stored.
+	 * The font stored on Settings -> Daymark, or '' when none is stored or
+	 * the stored one has left the Font Library. A different value from
+	 * Daymark_Settings::app_font() means code on the site chose the font.
 	 *
-	 * @since 0.21.0
+	 * @param array<string, string> $fonts Font Library fonts, slug => name.
+	 * @return string
+	 */
+	private static function stored_app_font( array $fonts ): string {
+		$stored = (string) get_option( Daymark_Settings::APP_FONT, '' );
+
+		return isset( $fonts[ $stored ] ) ? $stored : '';
+	}
+
+	/**
+	 * Save the Font setting, as part of handle_general_save(). Only a font
+	 * the Font Library has, or '' for Daymark's usual font, is stored. A
+	 * font chosen by code shows a disabled list, which a browser doesn't
+	 * send, so the stored choice is left alone then.
+	 *
+	 * @since 0.24.0
 	 *
 	 * @return string An error message when nothing was saved, or ''.
 	 */
-	private function save_reading_font(): string {
+	private function save_app_font(): string {
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Verified in handle_general_save() via check_admin_referer().
-		$stored_url  = Daymark_Settings::sanitize_font_url( (string) get_option( Daymark_Settings::BIONIC_READING_FONT_URL, '' ) );
-		$save_url    = Daymark_Settings::bionic_reading_font_url() === $stored_url && isset( $_POST[ Daymark_Settings::BIONIC_READING_FONT_URL ] );
-		$save_toggle = Daymark_Settings::bionic_reading_font() === (bool) get_option( Daymark_Settings::BIONIC_READING_FONT, false );
+		$fonts = Daymark_Settings::font_library_fonts();
 
-		if ( $save_url ) {
-			$raw = sanitize_text_field( wp_unslash( $_POST[ Daymark_Settings::BIONIC_READING_FONT_URL ] ) );
-			$url = Daymark_Settings::sanitize_font_url( $raw );
-
-			// Check the address before saving anything, so a typo doesn't
-			// leave the font half set up.
-			if ( '' !== $raw && '' === $url ) {
-				return __( 'The web font file must be an http or https address ending in .woff2 or .woff.', 'daymark' );
-			}
-
-			update_option( Daymark_Settings::BIONIC_READING_FONT_URL, $url );
+		if ( ! isset( $_POST[ Daymark_Settings::APP_FONT ] ) || self::stored_app_font( $fonts ) !== Daymark_Settings::app_font() ) {
+			return '';
 		}
 
-		if ( isset( $_POST[ Daymark_Settings::BIONIC_READING_FONT_FAMILY ] ) ) {
-			$family_id = (int) $_POST[ Daymark_Settings::BIONIC_READING_FONT_FAMILY ];
-
-			// -1 means "don't use the Font Library"; otherwise only a
-			// family the list actually offered is stored.
-			if ( -1 === $family_id || isset( Daymark_Settings::font_library_families()[ $family_id ] ) ) {
-				update_option( Daymark_Settings::BIONIC_READING_FONT_FAMILY, $family_id );
-			}
-		}
-
-		if ( $save_toggle ) {
-			update_option( Daymark_Settings::BIONIC_READING_FONT, isset( $_POST[ Daymark_Settings::BIONIC_READING_FONT ] ) ? '1' : '' );
-		}
+		$slug = sanitize_title( wp_unslash( $_POST[ Daymark_Settings::APP_FONT ] ) );
 		// phpcs:enable WordPress.Security.NonceVerification.Missing
+
+		if ( '' !== $slug && ! isset( $fonts[ $slug ] ) ) {
+			return __( 'That font is no longer in your site\'s Font Library, so the font was left as it was.', 'daymark' );
+		}
+
+		update_option( Daymark_Settings::APP_FONT, $slug );
 
 		return '';
 	}
@@ -4156,8 +4134,8 @@ class Daymark_Admin_Subscriptions {
 	 * Save the General tab (admin_post_daymark_general_save): every
 	 * section's settings from its one form and one Save button.
 	 *
-	 * A section whose value is refused (a web font address that isn't a
-	 * font file) is left as it was and named in an error notice; the other
+	 * A section whose value is refused (a font that has left the Font
+	 * Library) is left as it was and named in an error notice; the other
 	 * sections are still saved, so one typo doesn't lose the rest.
 	 *
 	 * @return void
@@ -4181,7 +4159,7 @@ class Daymark_Admin_Subscriptions {
 
 		$this->save_publishing_defaults();
 
-		$errors = array_filter( array( $this->save_poll_interval(), $this->save_reading_font() ) );
+		$errors = array_filter( array( $this->save_poll_interval(), $this->save_app_font() ) );
 
 		if ( $errors ) {
 			$this->redirect_with_error(
