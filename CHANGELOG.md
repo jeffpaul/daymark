@@ -23,6 +23,7 @@ can't act on them.
 ### Added
 
 - The New Mark button in the bottom bar now shows "New Mark" when you hover over it with a mouse, the same way the Timeline, Explore, Notifications and Me tabs show their names. ([#634](https://github.com/jeffpaul/daymark/pull/634))
+- The Bookmarks button on Explore now shows how many posts you have saved, in a small bubble on its corner, so you can tell at a glance there is something to come back to. With nothing saved, it shows nothing. ([#636](https://github.com/jeffpaul/daymark/pull/636))
 
 ### Changed
 
