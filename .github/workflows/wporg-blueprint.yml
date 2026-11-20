@@ -60,59 +60,78 @@ jobs:
 
       # Two changes to the copy that is run, and none to the file itself:
       # the demo files come from the branch under test instead of `main`,
-      # and a last step counts what the preview ended up with. The branch
-      # and repository names go in as jq arguments, never into the shell.
+      # and a last step writes down what the preview ended up with. The
+      # branch and repository names go in as jq arguments, never into the
+      # shell.
       - name: Build the copy to run
         env:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.html_url || format('{0}/{1}', github.server_url, github.repository) }}
           HEAD_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
         run: |
-          cat > "$RUNNER_TEMP/check.php" <<'PHP'
+          cat > "$RUNNER_TEMP/count.php" <<'PHP'
           <?php
           require_once '/wordpress/wp-load.php';
 
-          if ( ! class_exists( 'Daymark_Plugin' ) ) {
-              throw new Exception( 'Daymark is not active.' );
-          }
+          $result = array( 'active' => class_exists( 'Daymark_Plugin' ) );
 
-          $following = count( Daymark_Plugin::instance()->subscriptions->get_active() );
-          $from_them = (int) wp_count_posts( Daymark_Subscription_Post_Type::POST_TYPE )->publish;
-          $marks     = count(
-              get_posts(
-                  array(
-                      'post_type'      => 'post',
-                      'post_status'    => 'publish',
-                      'posts_per_page' => -1,
-                      'meta_key'       => '_daymark_is_mark',
-                      'fields'         => 'ids',
+          if ( $result['active'] ) {
+              $result['version']   = DAYMARK_VERSION;
+              $result['following'] = count( Daymark_Plugin::instance()->subscriptions->get_active() );
+              $result['from_them'] = (int) wp_count_posts( Daymark_Subscription_Post_Type::POST_TYPE )->publish;
+              $result['marks']     = count(
+                  get_posts(
+                      array(
+                          'post_type'      => 'post',
+                          'post_status'    => 'publish',
+                          'posts_per_page' => -1,
+                          'meta_key'       => '_daymark_is_mark',
+                          'fields'         => 'ids',
+                      )
                   )
-              )
-          );
-          $summary   = sprintf(
-              'Daymark %s: following %d sites, %d posts from them, %d sample Marks.',
-              DAYMARK_VERSION,
-              $following,
-              $from_them,
-              $marks
-          );
-
-          if ( $following < 4 || $from_them < 8 || $marks < 8 ) {
-              throw new Exception( 'The preview is missing demo content. ' . $summary );
+              );
+              $result['hello']     = null !== get_page_by_path( 'hello-world', OBJECT, 'post' );
           }
 
-          error_log( $summary );
+          file_put_contents( '/daymark-result/result.json', wp_json_encode( $result ) );
           PHP
 
-          jq --arg url "$HEAD_REPO" --arg ref "$HEAD_REF" --rawfile check "$RUNNER_TEMP/check.php" '
+          jq --arg url "$HEAD_REPO" --arg ref "$HEAD_REF" --rawfile count "$RUNNER_TEMP/count.php" '
             ( .steps[]
               | select( .step == "writeFiles" and .filesTree.resource == "git:directory" )
               | .filesTree
             ) |= ( .url = $url | .ref = $ref )
-            | .steps += [ { step: "runPHP", code: $check } ]
+            | .steps += [ { step: "runPHP", code: $count } ]
           ' .wordpress-org/blueprints/blueprint.json > "$RUNNER_TEMP/blueprint.json"
 
           echo "Demo files from $HEAD_REPO at $HEAD_REF"
           jq '.steps |= map( del( .code ) )' "$RUNNER_TEMP/blueprint.json"
 
+      # The folder mounted at /daymark-result is how the count gets back out:
+      # the runner prints nothing a step echoes.
       - name: Run the blueprint
-        run: npx --yes "@wp-playground/cli@${PLAYGROUND_CLI_VERSION}" run-blueprint --blueprint="$RUNNER_TEMP/blueprint.json"
+        run: |
+          mkdir -p "$RUNNER_TEMP/result"
+          npx --yes "@wp-playground/cli@${PLAYGROUND_CLI_VERSION}" run-blueprint \
+            --blueprint="$RUNNER_TEMP/blueprint.json" \
+            --mount="$RUNNER_TEMP/result:/daymark-result"
+
+      # No result file means the last step never ran, which fails here too.
+      - name: Check what the preview came up with
+        run: |
+          result="$RUNNER_TEMP/result/result.json"
+          if [ ! -s "$result" ]; then
+            echo "::error::The blueprint finished without writing its result, so the preview was not checked."
+            exit 1
+          fi
+
+          jq . "$result"
+          {
+            echo "### Live Preview"
+            echo
+            jq -r '"Daymark \(.version // "not active"): following \(.following // 0) sites, \(.from_them // 0) posts from them, \(.marks // 0) sample Marks."' "$result"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if ! jq -e '.active and .following >= 4 and .from_them >= 8 and .marks >= 8 and ( .hello | not )' "$result" > /dev/null; then
+            echo "::error::The preview is missing demo content. It should follow 4 sites, hold 8 posts from them and 8 sample Marks, and have no \"Hello world!\" post."
+            exit 1
+          fi

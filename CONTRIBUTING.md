@@ -609,8 +609,10 @@ Things to know:
   SVN `assets/blueprints/` by hand.
 - **wordpress.org accepts one file, named `blueprint.json`, under 100 KB.**
   The step that installs Daymark names it under both `pluginData` and the
-  older `pluginZipFile`: wordpress.org's importer has looked for the older
-  key, and adds an install step of its own when it finds none.
+  older `pluginZipFile`. wordpress.org's importer adds an install step of
+  its own when it does not recognise one; it looked for the older key until
+  late 2025 and was then moved to the newer one, so the file carries both
+  and is found either way.
 - **The button is switched on by hand**, once: on the plugin page's Advanced
   View, under "Toggle Live Preview". A committer can use "Test Preview" there
   before making it public.

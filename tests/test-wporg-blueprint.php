@@ -165,9 +165,9 @@ class Test_Wporg_Blueprint extends WP_UnitTestCase {
 	 * development copy.
 	 *
 	 * The step names the plugin under both `pluginData` (the current key)
-	 * and `pluginZipFile` (the older one). Wordpress.org's importer looked
-	 * for the older key when this was written, and adds a second install
-	 * step of its own to the end when it finds none.
+	 * and `pluginZipFile` (the older one). Wordpress.org's importer adds a
+	 * second install step of its own to the end when it does not recognise
+	 * one, and it has looked for each key at different times.
 	 */
 	public function test_blueprint_installs_the_released_plugin(): void {
 		$installs = $this->steps( 'installPlugin' );
