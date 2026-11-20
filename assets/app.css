@@ -2488,6 +2488,36 @@ button.daymark-stat {
 	outline-offset: 2px;
 }
 
+/* How many posts are bookmarked, as a small bubble on the icon's corner:
+   the same shape the Notifications tab's count has. Hidden while nothing
+   is saved. Its ring matches whatever the button's own background is. */
+.daymark-searchsaved__icon {
+	position: relative;
+	display: inline-flex;
+}
+
+.daymark-searchsaved__count {
+	position: absolute;
+	top: -8px;
+	inset-inline-start: 11px;
+	box-sizing: border-box;
+	min-width: 20px;
+	padding: 0 4px;
+	border: 2px solid var(--daymark-bg);
+	border-radius: 999px;
+	background: var(--daymark-accent);
+	color: var(--daymark-accent-fg);
+	font-size: 11px;
+	font-weight: 700;
+	line-height: 16px;
+	text-align: center;
+}
+
+.daymark-searchsaved:hover .daymark-searchsaved__count,
+.daymark-searchsaved[aria-pressed='true'] .daymark-searchsaved__count {
+	border-color: var(--daymark-accent-wash);
+}
+
 /* --- Me --- */
 .daymark-meprofile {
 	display: flex;

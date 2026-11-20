@@ -248,4 +248,70 @@ class Test_Rest_Bookmarks extends WP_UnitTestCase {
 
 		$this->assertSame( array(), $response->get_data() );
 	}
+
+	/**
+	 * The number on Explore's Bookmarks button: one item asked for, and the
+	 * X-WP-Total header says how many are bookmarked in all, Marks and
+	 * followed-site posts together.
+	 */
+	public function test_bookmarked_count_is_the_total_across_marks_and_subscription_posts() {
+		wp_set_current_user( $this->author_a );
+		$first  = $this->create_mark( $this->author_a );
+		$second = $this->create_mark( $this->author_a );
+		$this->create_mark( $this->author_a );
+		$sub_post_id = $this->create_subscription_post();
+		$bookmarks   = Daymark_Plugin::instance()->bookmarks;
+		$bookmarks->add( $this->author_a, $first );
+		$bookmarks->add( $this->author_a, $second );
+		$bookmarks->add( $this->author_a, $sub_post_id );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'bookmarked', '1' );
+		$request->set_param( 'count', '1' );
+		$request->set_param( 'per_page', 1 );
+		$response = rest_do_request( $request );
+
+		$this->assertCount( 1, $response->get_data() );
+		$this->assertSame( 3, (int) $response->get_headers()['X-WP-Total'] );
+	}
+
+	public function test_bookmarked_count_is_zero_when_nothing_is_bookmarked() {
+		wp_set_current_user( $this->author_a );
+		$this->create_mark( $this->author_a );
+		$this->create_subscription_post();
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'bookmarked', '1' );
+		$request->set_param( 'count', '1' );
+		$request->set_param( 'per_page', 1 );
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 0, (int) $response->get_headers()['X-WP-Total'] );
+	}
+
+	/**
+	 * A bookmarked post in the trash keeps its bookmark (it can come back)
+	 * but isn't in the Bookmarks list, so it isn't counted either. Another
+	 * person's bookmarks never are.
+	 */
+	public function test_bookmarked_count_leaves_out_trashed_posts_and_other_peoples_bookmarks() {
+		wp_set_current_user( $this->author_a );
+		$kept      = $this->create_mark( $this->author_a );
+		$trashed   = $this->create_mark( $this->author_a );
+		$theirs    = $this->create_mark( $this->author_b );
+		$bookmarks = Daymark_Plugin::instance()->bookmarks;
+		$bookmarks->add( $this->author_a, $kept );
+		$bookmarks->add( $this->author_a, $trashed );
+		$bookmarks->add( $this->author_b, $theirs );
+		wp_trash_post( $trashed );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'bookmarked', '1' );
+		$request->set_param( 'count', '1' );
+		$request->set_param( 'per_page', 1 );
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 1, (int) $response->get_headers()['X-WP-Total'] );
+		$this->assertSame( $kept, $response->get_data()[0]['id'] );
+	}
 }
