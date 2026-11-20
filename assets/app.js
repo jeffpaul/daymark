@@ -6313,8 +6313,10 @@
 	// The persistent footer: Timeline/Explore flank one side of the +New
 	// launcher, Notifications/Me the other — the launcher stays the visual
 	// and structural center, never part of the tab list itself, so
-	// active-tab styling can never land on it by accident.
+	// active-tab styling can never land on it by accident. Its button has
+	// the same hover title as a tab, so a mouse shows what the plus does.
 	function navFooterMarkup(active) {
+		const newMarkLabel = __('New Mark', 'daymark');
 		const navLink = (tab) => navLinkMarkup(tab, tab.key === active);
 		const before = NAV_TABS.slice(0, 2).map(navLink).join('');
 		const after = NAV_TABS.slice(2).map(navLink).join('');
@@ -6334,8 +6336,8 @@
 			<div class="daymark-launcher__scrim" aria-hidden="true"></div>
 			<div class="daymark-launcher__bubbles" data-launcher-bubbles>${bubbles}</div>
 			<button type="button" class="daymark-launcher__btn" data-action="new-mark" aria-label="${esc(
-				__('New Mark', 'daymark')
-			)}" aria-expanded="false">${launcherIcon(PLUS_GLYPH)}</button>
+				newMarkLabel
+			)}" title="${esc(newMarkLabel)}" aria-expanded="false">${launcherIcon(PLUS_GLYPH)}</button>
 		</div>`;
 		return `<footer class="daymark-homefooter"><nav class="daymark-bottomnav" aria-label="Daymark">${before}${launcher}${after}</nav></footer>`;
 	}

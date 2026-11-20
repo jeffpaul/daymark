@@ -6013,7 +6013,8 @@ test('bottom nav shows Timeline/Explore/Notifications/Me in order, with icons, a
 	await expect(exploreIcon.locator('polygon')).toHaveCount(1);
 
 	// Required order: Timeline, Explore, +New (center), Notifications, Me —
-	// the launcher <div> has no title attribute, so it stands out from the tabs.
+	// the launcher <div> has no title attribute (its button carries the
+	// title), so it stands out from the tabs.
 	const tabOrder = await nav.evaluate((el) =>
 		Array.from(el.children).map((child) => child.getAttribute('title') || 'launcher')
 	);
@@ -6025,8 +6026,9 @@ test('bottom nav shows Timeline/Explore/Notifications/Me in order, with icons, a
 	await expect(timeline).toHaveAttribute('aria-current', 'page');
 
 	// The +New launcher sits between the tabs and never picks up active-tab
-	// styling itself.
+	// styling itself. Its button has the same kind of hover title as the tabs.
 	await expect(page.locator('[data-action="new-mark"]')).not.toHaveClass(/is-active/);
+	await expect(page.locator('[data-action="new-mark"]')).toHaveAttribute('title', 'New Mark');
 
 	// Navigating to another destination moves the active indicator. A raw
 	// DOM click (see openComposer()'s own docblock above) — this suite's
