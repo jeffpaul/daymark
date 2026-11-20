@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- You can try Daymark before installing it: the Live Preview button on its wordpress.org page opens a throwaway site in your browser, with sample Marks already posted and four made-up friends to follow. ([#633](https://github.com/jeffpaul/daymark/pull/633))
+
 ### Fixed
 
 - Daymark's page on wordpress.org no longer cuts off its description and its changelog. Both were longer than wordpress.org shows, so the list of outside services stopped partway through and the changelog stopped inside an older release. The details of what your site sends to sites you follow now sit in the FAQ, and the changelog lists the three most recent releases. ([#630](https://github.com/jeffpaul/daymark/pull/630))

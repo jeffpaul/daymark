@@ -357,7 +357,10 @@ after merge, as a red Hooks Docs run on `main` to fix in a follow-up commit.
    If you add a new Mark type or Featured Content kind, also add a sample
    of it to `.github/blueprints/seed-sample-content.php` so reviewers can
    try it in the pull request's Playground preview (sample photos live in
-   `.github/blueprints/sample-images/`).
+   `.github/blueprints/sample-images/`). The same script fills the Live
+   Preview on wordpress.org, which runs it against the last *released*
+   Daymark, so keep it working there too: see
+   [The Live Preview on wordpress.org](#the-live-preview-on-wordpressorg).
 6. **Write the description as the commit message.** Merges here are squashed
    using the PR title and description verbatim, so that text becomes
    permanent git history. Open it with the plain-language summary described
@@ -561,13 +564,56 @@ Things to know:
   that are not in the repository are deleted by the deploy, so add a banner,
   icon or screenshot to `.wordpress-org/` instead of uploading it by hand.
   Folders inside `.wordpress-org/` (such as `src/`, the originals the assets
-  are made from) are not uploaded.
+  are made from) are not uploaded. The one exception is `blueprints/`, which
+  wordpress.org reads for the Live Preview (see below).
 - **A version is sent once.** If `tags/X.Y.Z` already exists in SVN the deploy
   stops without changing anything, so a re-run is safe, and a fix after a
   deploy needs a new version.
 - **If the deploy job fails** (a missing secret, wordpress.org being down),
   fix the cause and use "Re-run failed jobs" on the Release run. The GitHub
   release is already published and is left alone.
+
+### The Live Preview on wordpress.org
+
+The "Live Preview" button on the
+[plugin page](https://wordpress.org/plugins/daymark/) opens Daymark in
+[WordPress Playground](https://wordpress.org/playground/), a throwaway
+WordPress that runs in the visitor's browser. What it sets up comes from
+`.wordpress-org/blueprints/blueprint.json`, which the deploy copies to SVN as
+`assets/blueprints/blueprint.json`, the one place wordpress.org looks.
+
+The preview:
+
+- **Installs the released Daymark from wordpress.org**, so a visitor tries
+  what they would download. (The README's "Try it" link and each pull
+  request's preview button install from this repository instead, and use
+  `.github/blueprints/blueprint.json`.)
+- **Copies `.github/blueprints/` from `main`** into the preview site for its
+  demo content: `seed-sample-content.php` publishes the sample Marks, and
+  `sample-friends.php` gives the Timeline four people to follow.
+- **Follows nobody real.** The four friends are made up, on `.example`
+  addresses that can never belong to anyone. `sample-friends.php` answers the
+  requests WordPress would send to those addresses itself, so following,
+  refreshing and opening a post work with no network. Keep it that way: no
+  real person's name or site belongs in the public preview.
+
+Things to know:
+
+- **A change to a demo file is public as soon as it merges**, because the
+  preview reads `main`, and it runs against the last release, which may be
+  older than your change. The *Live Preview blueprint* workflow runs exactly
+  that combination in Playground on any pull request that touches these
+  files, and fails if the preview would come up without its content.
+- **A change to `blueprint.json` itself waits for the next release**, like any
+  other wordpress.org asset. To publish one sooner, commit that one file to
+  SVN `assets/blueprints/` by hand.
+- **wordpress.org accepts one file, named `blueprint.json`, under 100 KB.**
+  The step that installs Daymark names it under both `pluginData` and the
+  older `pluginZipFile`: wordpress.org's importer has looked for the older
+  key, and adds an install step of its own when it finds none.
+- **The button is switched on by hand**, once: on the plugin page's Advanced
+  View, under "Toggle Live Preview". A committer can use "Test Preview" there
+  before making it public.
 
 ## License
 

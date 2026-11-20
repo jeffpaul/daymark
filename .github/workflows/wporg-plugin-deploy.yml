@@ -5,7 +5,8 @@ name: Deploy to WordPress.org
 # the same name. The action copies the checkout into the directory's SVN
 # `trunk` (leaving out everything .distignore lists, the same list release.yml
 # and plugin-check.yml build from), copies `.wordpress-org/` into SVN `assets`
-# (banner, icon, screenshots), tags the version, and commits all three at once.
+# (banner, icon, screenshots, and the Live Preview's blueprints/blueprint.json),
+# tags the version, and commits all three at once.
 #
 # There are two ways in, and only the first one changes wordpress.org:
 #
@@ -69,7 +70,8 @@ jobs:
       # included. Only the files at its top level are wordpress.org assets;
       # folders such as src/ hold the large originals they were made from.
       # `blueprints/` is the one folder wordpress.org itself reads there (the
-      # plugin page's live preview), so it is kept if it is ever added.
+      # plugin page's Live Preview runs blueprints/blueprint.json), so it is
+      # kept.
       - name: Leave asset source folders out of the upload
         run: |
           find .wordpress-org -mindepth 1 -maxdepth 1 -type d ! -name blueprints -print -exec rm -rf {} +
