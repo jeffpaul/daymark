@@ -3914,6 +3914,12 @@
 		} catch (err) {
 			return;
 		}
+		// The whole list was just read, so its length is the count Explore's
+		// Bookmarks button shows, unless a newer number is already known or
+		// the list hit the ceiling above.
+		if (null === bookmarkCount && items.length < perPage * 10) {
+			setBookmarkCount(items.length);
+		}
 		const stillBookmarkedIds = new Set(items.map((item) => Number(item.id)));
 
 		const cached = await getAllCachedBookmarks();
@@ -7703,6 +7709,96 @@
 		}
 	}
 
+	// --- Bookmarks: how many are saved ---
+	//
+	// Explore's Bookmarks button wears a small bubble with how many posts
+	// are saved, and nothing when none are. The number is the same total
+	// the Bookmarks list itself reports (GET /timeline?bookmarked=1 with
+	// count=1), so the bubble and the list can't disagree. null means not
+	// known yet, which also shows nothing. Kept for the whole session, so
+	// Explore opens with the last known number and then checks it.
+	let bookmarkCount = null;
+	// Raised by every change to the count, so an answer that was asked for
+	// before a bookmark was saved or removed doesn't overwrite it.
+	let bookmarkCountSeq = 0;
+
+	function bookmarkCountLabel(count) {
+		if (!count || count < 1) {
+			return __('Bookmarks', 'daymark');
+		}
+		return sprintf(
+			/* translators: %d: number of bookmarked posts */
+			_n('Bookmarks — %d saved', 'Bookmarks — %d saved', count, 'daymark'),
+			count
+		);
+	}
+
+	// The bubble's markup. Always there, hidden while there is nothing to
+	// count, so the number can change without redrawing the button.
+	function bookmarkCountMark(count) {
+		const shown = count && count > 0;
+		return `<span class="daymark-searchsaved__count" data-explore-bookmarks-count aria-hidden="true"${
+			shown ? '' : ' hidden'
+		}>${shown ? esc(count > 99 ? '99+' : String(count)) : ''}</span>`;
+	}
+
+	// Brings the button on Explore (when it is the screen showing) up to
+	// date with bookmarkCount.
+	function paintBookmarkCount() {
+		const button = root.querySelector('[data-explore-bookmarks]');
+		if (!button) {
+			return;
+		}
+		const shown = !!bookmarkCount && bookmarkCount > 0;
+		const bubble = button.querySelector('[data-explore-bookmarks-count]');
+		if (bubble) {
+			bubble.hidden = !shown;
+			bubble.textContent = shown ? (bookmarkCount > 99 ? '99+' : String(bookmarkCount)) : '';
+		}
+		const label = bookmarkCountLabel(bookmarkCount);
+		button.setAttribute('aria-label', label);
+		button.setAttribute('title', label);
+	}
+
+	function setBookmarkCount(count) {
+		bookmarkCountSeq += 1;
+		bookmarkCount = Math.max(0, Number(count) || 0);
+		paintBookmarkCount();
+	}
+
+	// Asks the site how many posts are bookmarked. Without a connection it
+	// falls back, only when no number is known yet, to how many this
+	// device has saved for offline reading, which is what the Bookmarks
+	// list shows offline too.
+	async function refreshBookmarkCount() {
+		const seq = bookmarkCountSeq;
+		let total = null;
+		try {
+			const result = await apiGetWithTotal('timeline?bookmarked=1&count=1&per_page=1');
+			total = result.total;
+		} catch (err) {
+			if (null === bookmarkCount) {
+				const cached = await getAllCachedBookmarks();
+				total = cached.length || null;
+			}
+		}
+		if (null === total || seq !== bookmarkCountSeq) {
+			return;
+		}
+		setBookmarkCount(total);
+	}
+
+	// One bookmark saved (+1) or removed (-1) here. A number that isn't
+	// known yet is asked for instead of guessed.
+	function bumpBookmarkCount(delta) {
+		if (null === bookmarkCount) {
+			bookmarkCountSeq += 1;
+			refreshBookmarkCount();
+			return;
+		}
+		setBookmarkCount(bookmarkCount + delta);
+	}
+
 	function setBookmarkToggleState(trigger, bookmarked) {
 		trigger.classList.toggle('daymark-stat--bookmarked', bookmarked);
 		trigger.classList.toggle('daymark-stat--active', bookmarked);
@@ -7732,9 +7828,11 @@
 		try {
 			if (nextBookmarked) {
 				await apiPost('bookmarks/' + id, {});
+				bumpBookmarkCount(1);
 				cacheBookmarkOffline(screen, kind, id);
 			} else {
 				await apiDelete('bookmarks/' + id);
+				bumpBookmarkCount(-1);
 				removeCachedBookmarkOffline(id);
 				if (screen && screen.searchBookmarked) {
 					const wrap = trigger.closest('.daymark-recent__item-wrap');
@@ -10849,8 +10947,10 @@
 						__('Search Marks and followed sites', 'daymark')
 					)}" autocomplete="off" />
 					<button type="button" class="daymark-searchsaved" data-explore-bookmarks aria-pressed="false" aria-label="${esc(
-						__('Bookmarks', 'daymark')
-					)}" title="${esc(__('Bookmarks', 'daymark'))}">${navIcon(BOOKMARK_GLYPH)}</button>
+						bookmarkCountLabel(bookmarkCount)
+					)}" title="${esc(
+						bookmarkCountLabel(bookmarkCount)
+					)}"><span class="daymark-searchsaved__icon">${navIcon(BOOKMARK_GLYPH)}${bookmarkCountMark(bookmarkCount)}</span></button>
 				</div>
 				<div class="daymark-searchfilters" data-search-filters>
 					<label class="daymark-visually-hidden" for="daymark-date-filter">${esc(
@@ -11136,6 +11236,10 @@
 			if (input && this.searchQuery) {
 				input.value = this.searchQuery;
 			}
+			// The number on the Bookmarks button: render() drew the last
+			// known one, and this checks it (a bookmark may have been saved
+			// or removed on another device). Left running, not awaited.
+			refreshBookmarkCount();
 
 			// The People row rings whoever has a post that arrived since
 			// the visit before this one. A visit lasts until another tab

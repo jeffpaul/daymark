@@ -3706,7 +3706,8 @@ test('explore: search on top with Bookmarks beside it, People by latest post, Lo
 	// screen, a full-size tap target, and not down among the sections.
 	const bookmarks = page.locator('[data-explore-bookmarks]');
 	await expect(bookmarks).toBeVisible();
-	await expect(bookmarks).toHaveAccessibleName('Bookmarks');
+	// Its name starts with Bookmarks, and adds how many are saved when any are.
+	await expect(bookmarks).toHaveAccessibleName(/^Bookmarks/);
 	await expect(bookmarks).toHaveAttribute('aria-pressed', 'false');
 	await expect(sections.locator('[data-explore-bookmarks]')).toHaveCount(0);
 	const inputBox = await input.boundingBox();
@@ -6211,6 +6212,101 @@ function calendarMonth(page, month = '') {
 		return res.json();
 	}, month);
 }
+
+// Explore's Bookmarks button wears a bubble with how many posts are saved,
+// and nothing at all when none are. The number follows a bookmark saved or
+// removed without the page being loaded again.
+test('explore: the Bookmarks button shows how many are saved, and nothing when none are', async ({ page }) => {
+	const caption = `E2E bookmark count ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	// A Mark to bookmark, and how many bookmarks are there already (another
+	// test may have left one), counted the way the Bookmarks list counts.
+	const { id, before } = await page.evaluate(async (cap) => {
+		const config = window.daymarkApp;
+		const headers = { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' };
+		const created = await fetch(`${config.restUrl}marks`, {
+			method: 'POST',
+			headers,
+			credentials: 'same-origin',
+			body: JSON.stringify({ caption: cap, primary_type: 'note' }),
+		});
+		const mark = await created.json();
+		const counted = await fetch(`${config.restUrl}timeline?bookmarked=1&count=1&per_page=1`, {
+			headers,
+			credentials: 'same-origin',
+		});
+		return { id: mark.id, before: Number(counted.headers.get('X-WP-Total')) };
+	}, caption);
+	expect(id).toBeGreaterThan(0);
+
+	// What the button should say for a given number.
+	const expectCount = async (count) => {
+		const button = page.locator('[data-explore-bookmarks]');
+		const bubble = button.locator('[data-explore-bookmarks-count]');
+		if (count > 0) {
+			await expect(bubble).toBeVisible();
+			await expect(bubble).toHaveText(count > 99 ? '99+' : String(count));
+			await expect(button).toHaveAccessibleName(`Bookmarks — ${count} saved`);
+		} else {
+			await expect(bubble).toBeHidden();
+			await expect(button).toHaveAccessibleName('Bookmarks');
+		}
+	};
+
+	await page.goto('/daymark/explore');
+	await expectCount(before);
+
+	// Saved somewhere else (another device, say): the next visit shows it.
+	await page.evaluate(async (markId) => {
+		const config = window.daymarkApp;
+		await fetch(`${config.restUrl}bookmarks/${markId}`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: '{}',
+		});
+	}, id);
+	await page.goto('/daymark/explore');
+	await expectCount(before + 1);
+
+	// The bubble sits on the icon's corner, inside the button's own row.
+	const button = page.locator('[data-explore-bookmarks]');
+	const buttonBox = await button.boundingBox();
+	const bubbleBox = await button.locator('[data-explore-bookmarks-count]').boundingBox();
+	expect(bubbleBox.y).toBeGreaterThanOrEqual(buttonBox.y);
+	expect(bubbleBox.y + bubbleBox.height).toBeLessThan(buttonBox.y + buttonBox.height / 2 + bubbleBox.height / 2);
+	expect(bubbleBox.x + bubbleBox.width).toBeLessThanOrEqual(page.viewportSize().width);
+
+	// Open the bookmarks and take this one out: the number drops with it,
+	// and comes back when the same post is bookmarked again from a search.
+	await button.click();
+	const saved = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
+	await expect(saved).toBeVisible();
+	await saved.locator('[data-bookmark-toggle]').click();
+	await expect(saved).toHaveCount(0);
+	// The first tap on a Bookmark icon is followed by its explainer.
+	const hint = page.locator('.daymark-sheet__panel--hint');
+	await expect(hint).toBeVisible();
+	await page.locator('[data-sheet-dismiss]').click();
+	await expect(hint).toBeHidden();
+	await expectCount(before);
+
+	await page.locator('[data-search-clear-bookmarks]').click();
+	await page.locator('[data-search-input]').fill(caption);
+	const found = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
+	const toggle = found.locator('[data-bookmark-toggle]');
+	await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+	await toggle.click();
+	await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+	await expectCount(before + 1);
+
+	// Leave the site as it was found.
+	await toggle.click();
+	await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+	await expectCount(before);
+});
 
 // Explore's "Look back" strip (issue #294): small tiles for the site's own
 // posts from about this time in earlier years and months. A post dated a
