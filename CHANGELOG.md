@@ -22,7 +22,7 @@ can't act on them.
 
 ### Changed
 
-- Settings -> Daymark -> General now has one "Save changes" button at the bottom, in place of a Save button in each of its eight sections. One press saves everything on the page, so a change in one section is no longer lost by pressing Save in another.
+- Settings -> Daymark -> General now has one "Save changes" button at the bottom, in place of a Save button in each of its eight sections. One press saves everything on the page, so a change in one section is no longer lost by pressing Save in another. ([#635](https://github.com/jeffpaul/daymark/pull/635))
 
 ### Fixed
 
