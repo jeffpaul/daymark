@@ -10846,6 +10846,10 @@
 						index === 0 ? 'true' : 'false'
 					}">${esc(filter.label)}</button>`
 			).join('');
+			// [data-search-start] is Explore at rest, top to bottom: recent
+			// searches, Look back, People and Your tags, Sites you might
+			// follow. renderStart() fills the two parts either side of Look
+			// back, which starts hidden when the last visit found it empty.
 			return `
 			<header class="daymark-topbar">
 				${daymarkIconLink()}
@@ -10904,9 +10908,11 @@
 						__('Show everything', 'daymark')
 					)}</button>
 				</p>
-				<div class="daymark-searchstart" data-search-start hidden></div>
-				<div class="daymark-exploresections" data-explore-sections hidden>
-					<section class="daymark-recent" aria-labelledby="daymark-explore-lookback-heading">
+				<div class="daymark-searchstart" data-search-start hidden>
+					<div class="daymark-searchstart__part" data-start-recent></div>
+					<section class="daymark-recent" aria-labelledby="daymark-explore-lookback-heading"${
+						this._lookBackEmpty ? ' hidden' : ''
+					}>
 						<h2 id="daymark-explore-lookback-heading" class="daymark-section-heading">${esc(
 							__('Look back', 'daymark')
 						)}</h2>
@@ -10915,6 +10921,7 @@
 							<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 						</div>
 					</section>
+					<div class="daymark-searchstart__part" data-start-people></div>
 					${
 						config.canManageSubscriptions
 							? `<section class="daymark-recent" aria-labelledby="daymark-explore-suggest-heading" data-explore-suggest-section hidden>
@@ -11098,9 +11105,8 @@
 			this.searchTag = null;
 			this.searchPlace = '';
 			// The most-used tags and the followed sites are kept from the
-			// last visit and shown at once, then refreshed. Coming back
-			// from a "Look back" tile, the sections above it are then
-			// already their full height, so the strip doesn't move.
+			// last visit and shown at once, then refreshed, so the screen
+			// under "Look back" doesn't grow while it is being read.
 			this._topTags = this._topTags || null;
 			this._subscriptions = this._subscriptions || [];
 			this._suggestions = null;
@@ -11212,10 +11218,16 @@
 			if (!list || !list.isConnected) {
 				return;
 			}
+			// Remembered for the next visit (see render()): "Look back" is
+			// above the People row, so a strip that turns out to be empty
+			// would otherwise pull the row up each time Explore opens.
+			this._lookBackEmpty = !this._memories.length;
+			const section = list.closest('section');
 			if (!this._memories.length) {
-				list.closest('section').remove();
+				section.remove();
 			} else {
 				list.innerHTML = this._memories.map((item) => renderLookBackTile(item)).join('');
+				section.hidden = false;
 			}
 			if (this.isIdle()) {
 				this.useMemoriesAsItems();
@@ -11465,17 +11477,13 @@
 			);
 		},
 
-		// Swaps between the screen at rest (the starting screen and the
-		// sections under it) and the results.
+		// Swaps between the screen at rest (the starting screen) and the
+		// results.
 		showStart(show) {
 			const start = root.querySelector('[data-search-start]');
-			const sections = root.querySelector('[data-explore-sections]');
 			const results = root.querySelector('[data-search-results-section]');
 			if (start) {
 				start.hidden = !show;
-			}
-			if (sections) {
-				sections.hidden = !show;
 			}
 			if (results) {
 				results.hidden = show;
@@ -11485,11 +11493,15 @@
 			}
 		},
 
-		// The starting screen: recent searches, the people you follow, and
-		// your most used tags. Each part is left out when it has nothing.
+		// The starting screen's own parts: recent searches above "Look
+		// back", then the people you follow and your most used tags under
+		// it. Each is left out when it has nothing. "Look back" and "Sites
+		// you might follow" sit in the same container and are filled by
+		// their own loaders, so drawing these again leaves them alone.
 		renderStart() {
-			const start = root.querySelector('[data-search-start]');
-			if (!start) {
+			const recentPart = root.querySelector('[data-start-recent]');
+			const peoplePart = root.querySelector('[data-start-people]');
+			if (!recentPart || !peoplePart) {
 				return;
 			}
 			const recent = recentSearches();
@@ -11595,7 +11607,8 @@
 				</section>`
 				: '';
 
-			start.innerHTML = recentHtml + peopleHtml + tagsHtml;
+			recentPart.innerHTML = recentHtml;
+			peoplePart.innerHTML = peopleHtml + tagsHtml;
 		},
 
 		onStartClick(event) {

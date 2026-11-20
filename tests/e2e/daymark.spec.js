@@ -3618,14 +3618,15 @@ test('search: on the Explore tab, a query + type filter narrow the results', asy
 });
 
 // Explore and Search are one tab (issue #269): search on top with the
-// Bookmarks button beside it, and under its starting screen Look back.
+// Bookmarks button beside it, and on its starting screen Look back, just
+// above the People row.
 // Bookmarks and a followed site search in place instead of leaving for
 // another screen. The sites you follow are the People row, whoever posted
 // last first; the full list of them is a page under Me, not a second list
 // down here. The followed sites are canned, so the test needs no real
 // feed, and "Look back" is handed a Mark from today, since a test site
 // has none from earlier years.
-test('explore: search on top with Bookmarks beside it, People by latest post, Look back below', async ({ page }) => {
+test('explore: search on top with Bookmarks beside it, Look back above People by latest post', async ({ page }) => {
 	const memory = `E2E memory ${RUN_ID}`;
 
 	await loginAs(page);
@@ -3692,15 +3693,12 @@ test('explore: search on top with Bookmarks beside it, People by latest post, Lo
 
 	const input = page.locator('[data-search-input]');
 	const start = page.locator('[data-search-start]');
-	const sections = page.locator('[data-explore-sections]');
 	const list = page.locator('[data-search-results]');
 	const source = page.locator('[data-source-filter]');
 
-	// At rest: the search box, the starting screen, then Explore's own
-	// sections under it, in that order.
+	// At rest: the search box, then the starting screen under it.
 	await expect(input).toBeVisible();
 	await expect(start).toBeVisible();
-	await expect(sections).toBeVisible();
 	await expect(list).toBeHidden();
 	// Bookmarks sits beside the search box: on the same row, inside the
 	// screen, a full-size tap target, and not down among the sections.
@@ -3708,7 +3706,7 @@ test('explore: search on top with Bookmarks beside it, People by latest post, Lo
 	await expect(bookmarks).toBeVisible();
 	await expect(bookmarks).toHaveAccessibleName('Bookmarks');
 	await expect(bookmarks).toHaveAttribute('aria-pressed', 'false');
-	await expect(sections.locator('[data-explore-bookmarks]')).toHaveCount(0);
+	await expect(start.locator('[data-explore-bookmarks]')).toHaveCount(0);
 	const inputBox = await input.boundingBox();
 	const bookmarksBox = await bookmarks.boundingBox();
 	expect(bookmarksBox.x).toBeGreaterThan(inputBox.x + inputBox.width);
@@ -3716,12 +3714,20 @@ test('explore: search on top with Bookmarks beside it, People by latest post, Lo
 	expect(Math.abs(bookmarksBox.y - inputBox.y)).toBeLessThanOrEqual(2);
 	expect(bookmarksBox.width).toBeGreaterThanOrEqual(44);
 	expect(bookmarksBox.height).toBeGreaterThanOrEqual(44);
-	const memories = sections.locator('[data-explore-lookback]');
+	const memories = start.locator('[data-explore-lookback]');
 	await expect(memories.getByText(memory).first()).toBeVisible();
 	await expect(memories.locator('.daymark-lookback__when')).toHaveText('2 years ago today');
+	// Look back sits just above the People row: on the screen, and in the
+	// page's own order, which is what a screen reader and the Tab key
+	// follow. (No search has been made yet, so nothing is above it.)
+	expect((await start.locator('h2').allTextContents()).slice(0, 2)).toEqual(['Look back', 'People']);
 	const order = await page.evaluate(() => {
 		const top = (selector) => document.querySelector(selector).getBoundingClientRect().top;
-		return [top('[data-search-input]'), top('[data-search-start]'), top('[data-explore-sections]')];
+		return [
+			top('[data-search-input]'),
+			top('#daymark-explore-lookback-heading'),
+			top('#daymark-search-people-heading'),
+		];
 	});
 	expect(order[0]).toBeLessThan(order[1]);
 	expect(order[1]).toBeLessThan(order[2]);
@@ -3738,21 +3744,19 @@ test('explore: search on top with Bookmarks beside it, People by latest post, Lo
 	// site button: both are on Me's Following page.
 	await expect(page.locator('[data-explore-following]')).toHaveCount(0);
 	// (A suggested site's own Follow button is a different thing.)
-	await expect(sections.locator('[data-follow-site]:not(.daymark-suggest__follow)')).toHaveCount(0);
-	await expect(sections.getByRole('heading', { name: 'Following' })).toHaveCount(0);
+	await expect(start.locator('[data-follow-site]:not(.daymark-suggest__follow)')).toHaveCount(0);
+	await expect(start.getByRole('heading', { name: 'Following' })).toHaveCount(0);
 
 	// A followed site shows its posts right here: same tab, the Source
-	// filter set, and the sections out of the way of the results.
+	// filter set, and the starting screen out of the way of the results.
 	await start.locator('[data-start-source="990002"]').click();
 	await expect(source).toHaveValue('990002');
 	await expect(page).toHaveURL(/\/daymark\/explore\/?(#explore)?$/);
-	await expect(sections).toBeHidden();
 	await expect(start).toBeHidden();
 	await expect(list).toBeVisible();
 
-	// Letting go of the site brings the sections back.
+	// Letting go of the site brings the starting screen back.
 	await source.selectOption('');
-	await expect(sections).toBeVisible();
 	await expect(start).toBeVisible();
 
 	// Bookmarks works the same way: it stays pressed and says what it is
@@ -3760,26 +3764,26 @@ test('explore: search on top with Bookmarks beside it, People by latest post, Lo
 	await bookmarks.click();
 	await expect(bookmarks).toHaveAttribute('aria-pressed', 'true');
 	await expect(page.locator('[data-search-bookmarks-banner]')).toBeVisible();
-	await expect(sections).toBeHidden();
+	await expect(start).toBeHidden();
 	await expect(list).toBeVisible();
 	await bookmarks.click();
 	await expect(bookmarks).toHaveAttribute('aria-pressed', 'false');
 	await expect(page.locator('[data-search-bookmarks-banner]')).toBeHidden();
-	await expect(sections).toBeVisible();
+	await expect(start).toBeVisible();
 
 	// "Show everything" lets go too, and the button follows.
 	await bookmarks.click();
 	await expect(bookmarks).toHaveAttribute('aria-pressed', 'true');
 	await page.locator('[data-search-clear-bookmarks]').click();
 	await expect(bookmarks).toHaveAttribute('aria-pressed', 'false');
-	await expect(sections).toBeVisible();
+	await expect(start).toBeVisible();
 
 	// Typing searches as it always did.
 	await input.fill(`nothing-matches-${RUN_ID}`);
-	await expect(sections).toBeHidden();
+	await expect(start).toBeHidden();
 	await expect(list).toContainText('Nothing matches');
 	await input.fill('');
-	await expect(sections).toBeVisible();
+	await expect(start).toBeVisible();
 
 	// A "Look back" tile opens the post, and Back returns to Explore
 	// with the tile still there.
@@ -6336,11 +6340,15 @@ test('explore: Sites you might follow suggests someone who replied, offers Follo
 	await expect(row.locator('.daymark-suggest__why')).toHaveText('Replied to 1 of your Marks');
 	// The list stays short.
 	expect(await section.locator('[data-suggest-key]').count()).toBeLessThanOrEqual(5);
-	// It comes after Look back, as the last thing on Explore.
+	// It is the last thing on Explore: after Look back, and after the
+	// People row under that.
 	const lookBack = page.locator('[data-explore-lookback]');
 	if ((await lookBack.count()) > 0) {
 		expect((await section.boundingBox()).y).toBeGreaterThan((await lookBack.boundingBox()).y);
 	}
+	expect((await section.boundingBox()).y).toBeGreaterThan(
+		(await page.locator('#daymark-search-people-heading').boundingBox()).y
+	);
 
 	// Both actions are full-size tap targets.
 	const follow = row.locator('[data-follow-site]');

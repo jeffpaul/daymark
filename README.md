@@ -16,7 +16,7 @@
 <p align="center">
   <img src=".wordpress-org/screenshot-1.png" width="30%" alt="The Daymark Timeline on a phone: a friend's photo post, then your own, in one feed." />
   <img src=".wordpress-org/screenshot-2.png" width="30%" alt="The New Mark composer: two photos, a caption, where the Mark goes, and a Publish button." />
-  <img src=".wordpress-org/screenshot-4.png" width="30%" alt="Explore: search, the people you follow, your tags, and Look back." />
+  <img src=".wordpress-org/screenshot-4.png" width="30%" alt="Explore: search, Look back, the people you follow, and your tags." />
 </p>
 
 ## Your friends, your feed, your site
