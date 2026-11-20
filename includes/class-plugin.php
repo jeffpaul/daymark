@@ -451,6 +451,9 @@ final class Daymark_Plugin {
 		// priority, so both migrations must run before that.
 		add_action( 'init', array( __CLASS__, 'remove_public_timeline_page' ), 5 );
 		add_action( 'init', array( __CLASS__, 'migrate_content_type_pages' ), 5 );
+		// Moves a site off the Bionic Reading setting (0.21.0 to 0.23.0) to
+		// the Font Library font setting, once, before the app reads it.
+		add_action( 'init', array( 'Daymark_Settings', 'migrate_bionic_reading_font' ), 5 );
 		// Early, at priority 5: the Webmention plugin builds its list of
 		// post types to send from (get_post_types_by_support( 'webmentions' ))
 		// on `init` at priority 10, so the Like post type must already be

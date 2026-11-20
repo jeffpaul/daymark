@@ -54,6 +54,9 @@ delete_option( 'daymark_follow_pages' );
 delete_option( 'daymark_follow_queue' );
 delete_option( 'daymark_announce_follows' );
 delete_option( 'daymark_jetpack_followers_since' );
+delete_option( 'daymark_app_font' );
+// The Bionic Reading setting (0.21.0 to 0.23.0). An update moves these to
+// daymark_app_font and deletes them; a site removed before that still has them.
 delete_option( 'daymark_bionic_reading_font' );
 delete_option( 'daymark_bionic_reading_font_url' );
 delete_option( 'daymark_bionic_reading_font_family' );
