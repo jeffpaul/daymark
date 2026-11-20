@@ -87,8 +87,8 @@ class Test_Publishing_Defaults extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Call an admin_post handler, stopping it at its redirect instead of at
-	 * exit(). Returns the URL it redirected to.
+	 * Submit the General tab's form, stopping its handler at its redirect
+	 * instead of at exit(). Returns the URL it redirected to.
 	 *
 	 * @param array<string, mixed> $post Submitted fields.
 	 * @return string
@@ -98,19 +98,19 @@ class Test_Publishing_Defaults extends WP_UnitTestCase {
 			throw new RuntimeException( esc_url_raw( (string) $location ) );
 		};
 
-		$_POST = $post;
-		$_REQUEST['daymark_publishing_defaults_save_nonce'] = wp_create_nonce( 'daymark_publishing_defaults_save' );
+		$_POST                                  = $post;
+		$_REQUEST['daymark_general_save_nonce'] = wp_create_nonce( 'daymark_general_save' );
 		add_filter( 'wp_redirect', $stop );
 
 		try {
-			$this->admin->handle_publishing_defaults_save();
+			$this->admin->handle_general_save();
 			$location = '';
 		} catch ( RuntimeException $e ) {
 			$location = $e->getMessage();
 		} finally {
 			remove_filter( 'wp_redirect', $stop );
 			$_POST = array();
-			unset( $_REQUEST['daymark_publishing_defaults_save_nonce'] );
+			unset( $_REQUEST['daymark_general_save_nonce'] );
 		}
 
 		return $location;
@@ -271,7 +271,7 @@ class Test_Publishing_Defaults extends WP_UnitTestCase {
 		);
 
 		$this->assertStringContainsString( 'tab=general', $location );
-		$this->assertStringContainsString( 'daymark_notice=publishing_defaults_saved', $location );
+		$this->assertStringContainsString( 'daymark_notice=general_saved', $location );
 		// Bluesky, the built-in note default, isn't connected here, so it's kept.
 		$this->assertSame( array( 'testnet', 'bluesky' ), Daymark_Settings::destination_defaults( 'note' ) );
 		$this->assertSame( array(), Daymark_Settings::category_defaults( 'note' ) );
@@ -308,5 +308,23 @@ class Test_Publishing_Defaults extends WP_UnitTestCase {
 		remove_filter( 'daymark_default_destinations', $filter, 10 );
 
 		$this->assertSame( array( 'testnet' ), Daymark_Settings::stored_destination_defaults( 'note' ) );
+	}
+
+	/**
+	 * The General tab's one Save button sends the defaults table along with
+	 * every other setting. Saving it as shown, with no box changed, leaves
+	 * a site that never set its own defaults on the built-in ones.
+	 */
+	public function test_save_without_a_change_stores_nothing(): void {
+		$this->register_connected_destination();
+		self::factory()->category->create( array( 'name' => 'Travel' ) );
+
+		// Nothing ticked is what the table shows for this site: its one
+		// connected destination isn't a built-in default for any type.
+		$this->save( array() );
+
+		$this->assertNull( get_option( Daymark_Settings::DEFAULT_DESTINATIONS, null ) );
+		$this->assertNull( get_option( Daymark_Settings::DEFAULT_CATEGORIES, null ) );
+		$this->assertSame( array( 'bluesky' ), Daymark_Settings::destination_defaults( 'note' ) );
 	}
 }

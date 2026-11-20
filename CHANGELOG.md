@@ -25,6 +25,10 @@ can't act on them.
 - The New Mark button in the bottom bar now shows "New Mark" when you hover over it with a mouse, the same way the Timeline, Explore, Notifications and Me tabs show their names. ([#634](https://github.com/jeffpaul/daymark/pull/634))
 - The Bookmarks button on Explore now shows how many posts you have saved, in a small bubble on its corner, so you can tell at a glance there is something to come back to. With nothing saved, it shows nothing. ([#636](https://github.com/jeffpaul/daymark/pull/636))
 
+### Changed
+
+- Settings -> Daymark -> General now has one "Save changes" button at the bottom, in place of a Save button in each of its eight sections. One press saves everything on the page, so a change in one section is no longer lost by pressing Save in another. ([#635](https://github.com/jeffpaul/daymark/pull/635))
+
 ### Fixed
 
 - Daymark's page on wordpress.org no longer cuts off its description and its changelog. Both were longer than wordpress.org shows, so the list of outside services stopped partway through and the changelog stopped inside an older release. The details of what your site sends to sites you follow now sit in the FAQ, and the changelog lists the three most recent releases. ([#630](https://github.com/jeffpaul/daymark/pull/630))
