@@ -86,6 +86,28 @@ class Daymark_Routes {
 	}
 
 	/**
+	 * Whether the framework resolved this request to this Daymark instance.
+	 *
+	 * @return bool
+	 */
+	public function is_app_request(): bool {
+		return null !== $this->app && $this->app->is_app_request();
+	}
+
+	/**
+	 * Normalized route path, or null outside a resolved Daymark request.
+	 *
+	 * @return string|null
+	 */
+	private function request_path(): ?string {
+		if ( ! $this->is_app_request() ) {
+			return null;
+		}
+		$path = $this->app->get_route_var( 'wp_app_request' );
+		return is_string( $path ) ? trim( $path, '/' ) : null;
+	}
+
+	/**
 	 * Whether existing content owns the proposed app path.
 	 *
 	 * @param string $slug Slug to check.
@@ -951,8 +973,7 @@ class Daymark_Routes {
 	 * @return string|false
 	 */
 	public function skip_canonical_for_app_assets( $redirect_url ) {
-		$path = get_query_var( 'wp_app_request' );
-		if ( self::app_base() === get_query_var( 'wp_app_path' ) && is_string( $path ) && in_array( trim( $path, '/' ), array( 'manifest', 'config', 'worker', 'offline' ), true ) ) {
+		if ( in_array( $this->request_path(), array( 'manifest', 'config', 'worker', 'offline' ), true ) ) {
 			return false;
 		}
 		return $redirect_url;
@@ -978,14 +999,13 @@ class Daymark_Routes {
 	 * @return string A registered screen name, or '' when not on a Daymark screen.
 	 */
 	public function current_screen(): string {
-		if ( self::app_base() !== get_query_var( 'wp_app_path' ) ) {
+		$screen = $this->request_path();
+		if ( null === $screen ) {
 			return '';
 		}
-		$screen = get_query_var( 'wp_app_request' );
-		$screen = is_string( $screen ) ? trim( $screen, '/' ) : $screen;
 		$screen = '' === $screen ? 'home' : $screen;
 
-		if ( is_string( $screen ) && in_array( $screen, self::SCREENS, true ) ) {
+		if ( in_array( $screen, self::SCREENS, true ) ) {
 			return $screen;
 		}
 

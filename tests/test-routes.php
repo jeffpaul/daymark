@@ -38,6 +38,7 @@ class Test_Routes extends WP_UnitTestCase {
 	public function test_current_screen_from_wp_app_route(): void {
 		set_query_var( 'wp_app_path', Daymark_Routes::app_base() );
 		$routes = new Daymark_Routes();
+		$routes->register_app();
 		foreach ( array(
 			''               => 'home',
 			'notifications'  => 'notifications',
@@ -50,6 +51,45 @@ class Test_Routes extends WP_UnitTestCase {
 		}
 		set_query_var( 'wp_app_path', 'another-app' );
 		set_query_var( 'wp_app_request', 'notifications' );
+		$this->assertSame( '', $routes->current_screen() );
+	}
+
+	/** Framework request detection requires both resolved query variables. */
+	public function test_app_request_requires_resolved_framework_route(): void {
+		global $wp_query;
+		$routes = new Daymark_Routes();
+		set_query_var( 'wp_app_path', Daymark_Routes::app_base() );
+		set_query_var( 'wp_app_request', '' );
+		$this->assertFalse( $routes->is_app_request(), 'An unregistered instance owns no requests' );
+		$routes->register_app();
+		$this->assertTrue( $routes->is_app_request() );
+
+		unset( $wp_query->query_vars['wp_app_request'] );
+		$this->assertFalse( $routes->is_app_request(), 'An app path alone is not a resolved route' );
+		$this->assertSame( '', $routes->current_screen() );
+		$this->assertSame( 'canonical', $routes->skip_canonical_for_app_assets( 'canonical' ) );
+
+		set_query_var( 'wp_app_request', 'worker' );
+		set_query_var( 'wp_app_path', 'another-app' );
+		$this->assertFalse( $routes->is_app_request() );
+		$this->assertSame( 'canonical', $routes->skip_canonical_for_app_assets( 'canonical' ) );
+	}
+
+	/** Detection follows the registered instance rather than rereading its option. */
+	public function test_request_detection_uses_registered_app_path(): void {
+		$routes = new Daymark_Routes();
+		$routes->register_app();
+		$base = Daymark_Routes::app_base();
+		update_option( Daymark_Routes::OPTION_APP_BASE, 'daymark' === $base ? 'daymark-app' : 'daymark' );
+		set_query_var( 'wp_app_path', $base );
+		set_query_var( 'wp_app_request', 'notifications/' );
+		$this->assertTrue( $routes->is_app_request() );
+		$this->assertSame( 'notifications', $routes->current_screen() );
+
+		set_query_var( 'wp_app_request', 'worker/' );
+		$this->assertFalse( $routes->skip_canonical_for_app_assets( 'canonical' ) );
+		set_query_var( 'wp_app_request', array( 'worker' ) );
+		$this->assertSame( 'canonical', $routes->skip_canonical_for_app_assets( 'canonical' ) );
 		$this->assertSame( '', $routes->current_screen() );
 	}
 

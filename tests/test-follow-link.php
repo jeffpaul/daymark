@@ -80,6 +80,14 @@ class Test_Follow_Link extends WP_UnitTestCase {
 		$this->assertSame( '', Daymark_Follow_Link::redirect_url() );
 	}
 
+	/** A follow link on another WP App still opens Daymark. */
+	public function test_follow_link_on_another_app_goes_to_daymark(): void {
+		$_GET[ Daymark_Follow_Link::QUERY_VAR ] = 'example.com';
+		set_query_var( 'wp_app_path', 'another-app' );
+		set_query_var( 'wp_app_request', '' );
+		$this->assertSame( Daymark_Follow_Link::app_url( 'https://example.com' ), Daymark_Follow_Link::redirect_url() );
+	}
+
 	public function test_no_redirect_without_a_usable_address() {
 		$this->assertSame( '', Daymark_Follow_Link::redirect_url() );
 

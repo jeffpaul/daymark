@@ -112,7 +112,7 @@ class Daymark_Follow_Link {
 		}
 
 		// The app shell reads the address itself (templates/app-shell.php).
-		if ( Daymark_Routes::app_base() === get_query_var( 'wp_app_path' ) ) {
+		if ( Daymark_Plugin::instance()->routes->is_app_request() ) {
 			return '';
 		}
 
