@@ -5,7 +5,7 @@ permissions:
 
 on:
   push:
-    branches: [main]
+    branches: [main, convert-to-wp-app]
   pull_request:
 
 # A newer push to a pull request makes the run for the previous commit
