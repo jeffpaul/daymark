@@ -20,7 +20,8 @@ class Test_App_Shell extends WP_UnitTestCase {
 		wp_set_current_user( $user_id );
 
 		$this->go_to( '/' );
-		set_query_var( Daymark_Routes::QUERY_VAR, 'home' );
+		set_query_var( 'wp_app_path', Daymark_Routes::app_base() );
+		set_query_var( 'wp_app_request', '' );
 
 		ob_start();
 		include DAYMARK_PLUGIN_DIR . 'templates/app-shell.php';

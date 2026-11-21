@@ -201,12 +201,11 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 		global $wp_rewrite;
 
 		$wp_rewrite->extra_rules_top = array();
-		( new Daymark_Routes() )->register();
+		( new Daymark_Routes() )->register_app();
+		\WpApp\Registry::add_all_rewrite_rules();
 
-		$this->assertSame(
-			'index.php?daymark_app=bookmarklet',
-			$wp_rewrite->extra_rules_top[ '^' . Daymark_Routes::app_base() . '/bookmarklet/?$' ] ?? null
-		);
+		$router = \WpApp\Registry::get_apps()[ Daymark_Routes::app_base() ];
+		$this->assertSame( 'app-bookmarklet.php', $router->get_routes()['bookmarklet']['template'] );
 	}
 
 	public function test_read_target_rejects_non_http_urls() {

@@ -1,0 +1,12 @@
+{
+    "name": "jeffpaul/daymark-framework",
+    "description": "Shared WP App runtime bundled with Daymark.",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "akirk/wp-app": "^2.2"
+    },
+    "config": {
+        "vendor-dir": "packages",
+        "autoloader-suffix": "DaymarkWpApp"
+    }
+}

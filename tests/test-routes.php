@@ -14,10 +14,75 @@ class Test_Routes extends WP_UnitTestCase {
 	public function set_up(): void {
 		parent::set_up();
 		delete_option( Daymark_Routes::OPTION_APP_BASE );
-		delete_option( Daymark_Routes::OPTION_LEGACY_APP_BASE );
 		delete_option( 'daymark_legacy_content_pages' );
 		delete_option( 'daymark_nav_routes_added' );
 		delete_option( 'daymark_bookmarklet_route_added' );
+	}
+
+	/** Screen routes use the shared framework and preserve Daymark's shell. */
+	public function test_wp_app_registration(): void {
+		$routes = new Daymark_Routes();
+		$routes->register_app();
+		$base   = Daymark_Routes::app_base();
+		$router = \WpApp\Registry::get_apps()[ $base ];
+
+		$this->assertSame( 'edit_posts', \WpApp\Registry::get_app_capabilities()[ $base ] );
+		foreach ( array( '', 'notifications', 'explore', 'search', 'me' ) as $path ) {
+			$this->assertSame( 'app-shell.php', $router->get_routes()[ $path ]['template'] );
+		}
+		$routes->register_app();
+		$this->assertSame( $router, \WpApp\Registry::get_apps()[ $base ], 'Registration is idempotent' );
+	}
+
+	/** Framework catch-all rules can identify screens without the legacy var. */
+	public function test_current_screen_from_wp_app_route(): void {
+		set_query_var( 'wp_app_path', Daymark_Routes::app_base() );
+		$routes = new Daymark_Routes();
+		foreach ( array(
+			''               => 'home',
+			'notifications'  => 'notifications',
+			'notifications/' => 'notifications',
+			'search'         => 'search',
+			'unknown'        => '',
+		) as $path => $expected ) {
+			set_query_var( 'wp_app_request', $path );
+			$this->assertSame( $expected, $routes->current_screen() );
+		}
+		set_query_var( 'wp_app_path', 'another-app' );
+		set_query_var( 'wp_app_request', 'notifications' );
+		$this->assertSame( '', $routes->current_screen() );
+	}
+
+	/** Screens and extensionless endpoints share one framework namespace. */
+	public function test_endpoints_share_the_app_router(): void {
+		\WpApp\Registry::reset();
+		$routes = new Daymark_Routes();
+		$routes->register_app();
+		$base = Daymark_Routes::app_base();
+		$apps = \WpApp\Registry::get_apps();
+		$this->assertSame( array( $base ), array_keys( $apps ) );
+		foreach ( array(
+			'manifest'    => 'app-manifest.php',
+			'config'      => 'app-config.php',
+			'worker'      => 'app-worker.php',
+			'offline'     => 'app-offline.php',
+			'share'       => 'app-share.php',
+			'bookmarklet' => 'app-bookmarklet.php',
+		) as $path => $template ) {
+			$this->assertSame( $template, $apps[ $base ]->get_routes()[ $path ]['template'] );
+		}
+		$this->assertNull( $apps[ $base ]->get_routes()['manifest']['capability'] );
+		$this->assertSame( 'edit_posts', $apps[ $base ]->get_routes()['']['capability'] );
+	}
+
+	/** The experiment deliberately does not register retired URL aliases. */
+	public function test_no_legacy_route_aliases(): void {
+		update_option( 'daymark_legacy_app_base', 'moment' );
+		update_option( 'daymark_legacy_content_pages', array( 'notes' => true ) );
+		$rules = $this->registered_rules();
+		$this->assertNull( $this->query_for_path( $rules, 'moment' ) );
+		$this->assertNull( $this->query_for_path( $rules, 'notes' ) );
+		$this->assertNull( $this->query_for_path( $rules, 'daymark/config.json' ) );
 	}
 
 	private function registered_rule_patterns(): array {
@@ -25,11 +90,7 @@ class Test_Routes extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Full pattern => query-string map. Patterns alone can't distinguish the
-	 * redirect rules from the direct ones: '^daymark/?$' is the literal
-	 * pattern for both the normal home route (when the base is 'daymark')
-	 * and the migrated-install redirect — only the mapped query string
-	 * ('daymark_app=home' vs '=redirect-home') tells them apart.
+	 * Framework rewrite rules for this install's resolved paths.
 	 *
 	 * @return array<string, string>
 	 */
@@ -38,11 +99,23 @@ class Test_Routes extends WP_UnitTestCase {
 		// Top rules accumulate on the shared WP_Rewrite across in-process
 		// tests; start from a clean slate for this registration.
 		$wp_rewrite->extra_rules_top = array();
+		\WpApp\Registry::reset();
 
 		$routes = new Daymark_Routes();
-		$routes->register();
+		$routes->register_app();
+		\WpApp\Registry::add_all_rewrite_rules();
 
 		return $wp_rewrite->extra_rules_top;
+	}
+
+	/** Resolve a URL using the actual framework rewrite rules. */
+	private function query_for_path( array $rules, string $path ): ?string {
+		foreach ( $rules as $pattern => $query ) {
+			if ( preg_match( '#' . $pattern . '#', $path, $matches ) ) {
+				return preg_replace_callback( '/\$matches\[(\d+)\]/', static fn( $capture ) => $matches[ (int) $capture[1] ] ?? '', $query );
+			}
+		}
+		return null;
 	}
 
 	/** Default: no content at /daymark, the app claims it. */
@@ -68,7 +141,7 @@ class Test_Routes extends WP_UnitTestCase {
 		$this->assertSame( home_url( '/daymark-app' ), Daymark_Routes::app_url() );
 
 		$patterns = $this->registered_rule_patterns();
-		$this->assertContains( '^daymark-app/?$', $patterns );
+		$this->assertContains( '^daymark\-app/?$', $patterns );
 		$this->assertNotContains( '^daymark/?$', $patterns, 'The user page URL must not be shadowed' );
 
 		// The Plugins-page link follows the resolved base.
@@ -91,75 +164,11 @@ class Test_Routes extends WP_UnitTestCase {
 		$this->assertSame( 'daymark-app', Daymark_Routes::resolve_app_base() );
 	}
 
-	/** A migrated install's old /moment URL redirects to the real app at /daymark. */
-	public function test_legacy_base_redirects_to_daymark() {
-		update_option( Daymark_Routes::OPTION_LEGACY_APP_BASE, 'moment' );
 
-		$rules = $this->registered_rules();
 
-		$this->assertSame( 'index.php?daymark_app=home', $rules['^daymark/?$'] ?? null, 'The app itself only ever lives at /daymark' );
-		$this->assertSame( 'index.php?daymark_app=redirect-home', $rules['^moment/?$'] ?? null, 'The old brand URL redirects rather than staying a second home for the app' );
-		$this->assertSame( 'index.php?daymark_app=redirect-notifications', $rules['^moment/notifications/?$'] ?? null );
-	}
 
-	/**
-	 * An install that migrated before an earlier version of the one-time
-	 * Moment-to-Daymark migration stopped carrying the Moment-era base into
-	 * daymark_app_base has it stuck there permanently — app_base() must
-	 * self-heal that on the next resolution rather than trusting it forever,
-	 * the way it does for a genuinely valid base.
-	 */
-	public function test_stale_app_base_self_heals_to_daymark() {
-		update_option( Daymark_Routes::OPTION_APP_BASE, 'moment' );
 
-		$this->assertSame( 'daymark', Daymark_Routes::app_base(), 'A stale pre-rename value must not be trusted as a real base' );
-		$this->assertSame( 'daymark', get_option( Daymark_Routes::OPTION_APP_BASE ), 'The correction must persist, not just be returned once' );
-		$this->assertSame( 'moment', get_option( Daymark_Routes::OPTION_LEGACY_APP_BASE ), 'The old value survives only for the redirect' );
-	}
 
-	/** Once self-healed, the corrected base is a real value and stays sticky. */
-	public function test_stale_app_base_self_heal_is_idempotent() {
-		update_option( Daymark_Routes::OPTION_APP_BASE, 'moment' );
-
-		Daymark_Routes::app_base();
-		$this->assertSame( 'daymark', Daymark_Routes::app_base(), 'Second call sees an already-valid base and changes nothing' );
-	}
-
-	/** An existing legacy-base option is never overwritten by the self-heal either. */
-	public function test_stale_app_base_self_heal_does_not_overwrite_existing_legacy_base() {
-		update_option( Daymark_Routes::OPTION_APP_BASE, 'moment' );
-		update_option( Daymark_Routes::OPTION_LEGACY_APP_BASE, 'already-set' );
-
-		Daymark_Routes::app_base();
-
-		$this->assertSame( 'already-set', get_option( Daymark_Routes::OPTION_LEGACY_APP_BASE ) );
-	}
-
-	/** The self-healed base gets the exact same /daymark route + old-slug redirect a fresh migration once did. */
-	public function test_stale_app_base_self_heal_registers_redirect() {
-		update_option( Daymark_Routes::OPTION_APP_BASE, 'moment' );
-
-		$rules = $this->registered_rules();
-
-		$this->assertSame( 'index.php?daymark_app=home', $rules['^daymark/?$'] ?? null );
-		$this->assertSame( 'index.php?daymark_app=redirect-home', $rules['^moment/?$'] ?? null );
-	}
-
-	/** A legacy-base redirect must never shadow real content that now lives at the old slug. */
-	public function test_legacy_slug_collision_gets_no_redirect() {
-		self::factory()->post->create(
-			array(
-				'post_type' => 'page',
-				'post_name' => 'moment',
-			)
-		);
-		update_option( Daymark_Routes::OPTION_LEGACY_APP_BASE, 'moment' );
-
-		$rules = $this->registered_rules();
-
-		$this->assertArrayHasKey( '^daymark/?$', $rules );
-		$this->assertArrayNotHasKey( '^moment/?$', $rules, 'Must not shadow the page actually living at the old slug' );
-	}
 
 	/** A slug collision at /daymark must never have /daymark rewritten out from under the real content. */
 	public function test_slug_collision_gets_no_daymark_redirect() {
@@ -173,7 +182,7 @@ class Test_Routes extends WP_UnitTestCase {
 
 		$rules = $this->registered_rules();
 
-		$this->assertArrayHasKey( '^daymark-app/?$', $rules );
+		$this->assertArrayHasKey( '^daymark\-app/?$', $rules );
 		$this->assertArrayNotHasKey( '^daymark/?$', $rules, 'Must not shadow the page actually living at /daymark' );
 	}
 
@@ -181,8 +190,8 @@ class Test_Routes extends WP_UnitTestCase {
 	public function test_default_base_gets_no_redirect_rule() {
 		$rules = $this->registered_rules();
 
-		$this->assertSame( 'index.php?daymark_app=home', $rules['^daymark/?$'] ?? null, 'The direct app route, not a redirect' );
-		$this->assertSame( 'index.php?daymark_app=notifications', $rules['^daymark/notifications/?$'] ?? null );
+		$this->assertSame( 'index.php?wp_app_request=&wp_app_path=daymark', $this->query_for_path( $rules, 'daymark' ), 'The direct app route, not a redirect' );
+		$this->assertSame( 'index.php?wp_app_request=notifications&wp_app_path=daymark', $this->query_for_path( $rules, 'daymark/notifications' ) );
 	}
 
 	/** Once resolved, the base is stable until explicitly re-resolved. */
@@ -203,15 +212,17 @@ class Test_Routes extends WP_UnitTestCase {
 	/** Manifest requests skip the canonical trailing-slash redirect. */
 	public function test_manifest_skips_canonical_redirect() {
 		$routes = new Daymark_Routes();
-		$routes->register();
+		$routes->register_app();
+		\WpApp\Registry::add_all_rewrite_rules();
 
-		set_query_var( Daymark_Routes::QUERY_VAR, 'manifest' );
+		set_query_var( 'wp_app_path', Daymark_Routes::app_base() );
+		set_query_var( 'wp_app_request', 'manifest' );
 		$this->assertFalse(
-			apply_filters( 'redirect_canonical', home_url( '/daymark/manifest.json/' ) ),
+			apply_filters( 'redirect_canonical', home_url( '/daymark/manifest/' ) ),
 			'Manifest must serve directly, not bounce through a 301'
 		);
 
-		set_query_var( Daymark_Routes::QUERY_VAR, '' );
+		set_query_var( 'wp_app_path', '' );
 		$this->assertSame(
 			home_url( '/somewhere/' ),
 			apply_filters( 'redirect_canonical', home_url( '/somewhere/' ) ),
@@ -267,41 +278,19 @@ class Test_Routes extends WP_UnitTestCase {
 	public function test_nav_destinations_get_real_routes() {
 		$patterns = $this->registered_rules();
 
-		$this->assertSame( 'index.php?daymark_app=explore', $patterns['^daymark/explore/?$'] ?? null );
-		$this->assertSame( 'index.php?daymark_app=search', $patterns['^daymark/search/?$'] ?? null );
-		$this->assertSame( 'index.php?daymark_app=me', $patterns['^daymark/me/?$'] ?? null );
+		$this->assertSame( 'index.php?wp_app_request=explore&wp_app_path=daymark', $this->query_for_path( $patterns, 'daymark/explore' ) );
+		$this->assertSame( 'index.php?wp_app_request=search&wp_app_path=daymark', $this->query_for_path( $patterns, 'daymark/search' ) );
+		$this->assertSame( 'index.php?wp_app_request=me&wp_app_path=daymark', $this->query_for_path( $patterns, 'daymark/me' ) );
 	}
 
 	/** The Web Share Target's action URL (the manifest's share_target.action) is a registered route. */
 	public function test_share_target_route_registered() {
 		$patterns = $this->registered_rules();
 
-		$this->assertSame( 'index.php?daymark_app=share', $patterns['^daymark/share/?$'] ?? null );
+		$this->assertSame( 'index.php?wp_app_request=share&wp_app_path=daymark', $this->query_for_path( $patterns, 'daymark/share' ) );
 	}
 
-	/** A bookmarked URL for a retired content-type page redirects to Explore. */
-	public function test_legacy_content_page_slug_redirects_to_explore() {
-		update_option( 'daymark_legacy_content_pages', array( 'notes' => true ) );
 
-		$rules = $this->registered_rules();
-
-		$this->assertSame( 'index.php?daymark_app=redirect-explore', $rules['^notes/?$'] ?? null );
-	}
-
-	/** A legacy content-page redirect must never shadow real content now living at that slug. */
-	public function test_legacy_content_page_slug_collision_gets_no_redirect() {
-		self::factory()->post->create(
-			array(
-				'post_type' => 'page',
-				'post_name' => 'notes',
-			)
-		);
-		update_option( 'daymark_legacy_content_pages', array( 'notes' => true ) );
-
-		$rules = $this->registered_rules();
-
-		$this->assertArrayNotHasKey( '^notes/?$', $rules, 'Must not shadow the page actually living at /notes' );
-	}
 
 	/** Falls back to Daymark's bundled PNG when the site has no Site Icon. */
 	public function test_icon_url_falls_back_to_bundled_png() {

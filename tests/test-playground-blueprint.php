@@ -36,7 +36,7 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 	 */
 	private function blueprint_php( string $path ): array {
 		$blueprint = json_decode(
-			(string) file_get_contents( $this->repo_path( $path ) ), // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading this plugin's own bundled blueprint file off disk, not a remote fetch (matches this codebase's other local-file reads, e.g. class-routes.php's own sw.js read).
+			(string) file_get_contents( $this->repo_path( $path ) ), // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading this plugin's own bundled blueprint file off disk, not a remote fetch (matches this codebase's other local-file reads, e.g. class-routes.php's own worker read).
 			true
 		);
 

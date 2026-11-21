@@ -4562,7 +4562,7 @@ test('plugins page offers an Open Daymark action link', async ({ page }) => {
 
 // The PWA manifest serves directly (no canonical 301) with the app scope.
 test('manifest serves directly with app start_url', async ({ request }) => {
-	const res = await request.get('/daymark/manifest.json', { maxRedirects: 0 });
+	const res = await request.get('/daymark/manifest', { maxRedirects: 0 });
 	expect(res.status()).toBe(200);
 	expect(res.headers()['content-type']).toContain('manifest+json');
 	const manifest = await res.json();
@@ -5030,7 +5030,7 @@ test('offline: composing while offline queues locally and syncs when back online
 // Mark locally — not just a session that was already open when
 // connectivity dropped (the test above). Loads once online first so the
 // service worker installs, activates, and precaches (assets/daymark-sw.js)
-// — including its own network-first fetch of GET /daymark/config.json,
+// — including its own network-first fetch of GET /daymark/config,
 // which is what the offline-fallback shell falls back to on this very
 // reload (its own live fetch fails, since we're offline by then).
 test('cold-offline load: a fresh /daymark navigation with zero connectivity still renders and the composer works', async ({
@@ -5038,10 +5038,10 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 	context,
 }) => {
 	// This test's own critical path before it can even go offline is long:
-	// SW registration (a live fetch of sw.js), install-time precaching of
-	// four resources (app.css/app.js/offline-boot.js/offline.html, each a
+	// SW registration (a live fetch of worker), install-time precaching of
+	// four resources (app.css/app.js/offline-boot.js/offline, each a
 	// full WP bootstrap for the two PHP-templated ones), activation, and
-	// only then the config.json warming fetch (another full WP bootstrap)
+	// only then the config warming fetch (another full WP bootstrap)
 	// plus its own async cache write — several sequential network round
 	// trips that comfortably finish in a couple of seconds locally but can
 	// occasionally run long on a loaded CI runner. The default 30s test
@@ -5056,12 +5056,12 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 	await page.goto('/daymark');
 
 	// Both the SW's own install-time precaching (app.css/app.js/
-	// offline-boot.js/offline.html) and the boot-time config.json warming
+	// offline-boot.js/offline) and the boot-time config warming
 	// fetch (assets/app.js) are fire-and-forget, and neither one is awaited
 	// by the normal boot sequence — so rather than guess a fixed delay is
 	// enough for both to land, poll for the actual end state this test
 	// depends on: the page under the worker's control, plus its own
-	// redacted config.json and the offline shell itself both genuinely
+	// redacted config and the offline shell itself both genuinely
 	// present in Cache Storage. Only once all three are true is cutting
 	// connectivity guaranteed not to race either fire-and-forget task.
 	await page.evaluate(() => navigator.serviceWorker.ready);
@@ -5079,8 +5079,8 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 					for (const name of names) {
 						const cache = await caches.open(name);
 						const [config, offline] = await Promise.all([
-							cache.match(new URL('config.json', navigator.serviceWorker.controller.scriptURL)),
-							cache.match(new URL('offline.html', navigator.serviceWorker.controller.scriptURL)),
+							cache.match(new URL('config', navigator.serviceWorker.controller.scriptURL)),
+							cache.match(new URL('offline', navigator.serviceWorker.controller.scriptURL)),
 						]);
 						if (config && offline) {
 							return true;
@@ -5089,8 +5089,8 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 					return false;
 				}),
 			// Generous on purpose: this waits out several sequential live
-			// requests (sw.js, the four precached resources, then the
-			// config.json warming fetch), each a full WP bootstrap for the
+			// requests (worker, the four precached resources, then the
+			// config warming fetch), each a full WP bootstrap for the
 			// PHP-templated ones — comfortably fast locally, occasionally
 			// slow on a loaded CI runner. See this test's own setTimeout()
 			// above for the matching overall budget.
@@ -5099,7 +5099,7 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 		.toBe(true);
 
 	// Temporary diagnostic (not a permanent fixture): the readiness poll
-	// above now passes reliably (confirms the config.json warming fix), but
+	// above now passes reliably (confirms the config warming fix), but
 	// the launcher check just below has started failing instead — genuinely
 	// new territory this investigation hasn't seen before, so relay the
 	// offline-shell page's own console/errors to the CI log rather than
@@ -5143,7 +5143,7 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 		);
 
 		// Queued locally (IndexedDB) exactly like the already-open-session
-		// offline case — no config.json nonce was ever available to
+		// offline case — no config nonce was ever available to
 		// actually reach the server while offline either way. Save as draft
 		// went back to the Timeline, where the Pending list shows it.
 		await expect(page).toHaveURL(/#home$/);

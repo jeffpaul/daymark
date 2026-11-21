@@ -1,19 +1,13 @@
 <?php
 /**
  * Cold-offline-load support tests (issue #126): the shared config builder,
- * the new config.json/sw.js/offline.html routes, and the offline-fallback
+ * the new config/worker/offline routes, and the offline-fallback
  * shell template itself.
  *
- * The config.json/sw.js branches inside
- * Daymark_Routes::maybe_load_app_shell() call exit() directly (same as the
- * pre-existing manifest.json branch), so — matching this codebase's own
- * established pattern for that branch (see Test_Routes' manifest tests) —
- * this file exercises the underlying, non-exiting building blocks
- * (build_app_config(), the registered rewrite rules, the canonical-redirect
- * skip, and the offline-shell template's own rendered output) rather than
- * the exit-calling branch itself; real HTTP-level behavior (the 401 gate,
- * actual JSON/JS response bodies) is covered by tests/smoke.sh against a
- * live site.
+ * The endpoint templates and access guard can exit, so these tests exercise
+ * their shared builders, framework route registration, canonical redirect
+ * handling, and the offline shell. HTTP response contracts are also covered
+ * by tests/smoke.sh against a live site.
  *
  * @package Daymark
  */
@@ -55,7 +49,8 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 	public function test_build_app_config_matches_app_shell_inline_config_shape() {
 		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );
 		$this->go_to( '/' );
-		set_query_var( Daymark_Routes::QUERY_VAR, 'home' );
+		set_query_var( 'wp_app_path', Daymark_Routes::app_base() );
+		set_query_var( 'wp_app_request', '' );
 
 		ob_start();
 		include DAYMARK_PLUGIN_DIR . 'templates/app-shell.php';
@@ -70,34 +65,37 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 		$this->assertSame( array_keys( $config ), array_keys( $inline_config ), 'Both must build the exact same set of keys' );
 	}
 
-	/** The three new routes are registered, same convention as every other app-base rewrite rule. */
+	/** The offline endpoints use exact framework paths and dedicated templates. */
 	public function test_new_routes_are_registered() {
 		global $wp_rewrite;
 		$wp_rewrite->extra_rules_top = array();
 
 		$routes = new Daymark_Routes();
-		$routes->register();
-		$rules = $wp_rewrite->extra_rules_top;
-
-		$this->assertSame( 'index.php?daymark_app=config', $rules['^daymark/config\.json$'] ?? null );
-		$this->assertSame( 'index.php?daymark_app=sw', $rules['^daymark/sw\.js$'] ?? null );
-		$this->assertSame( 'index.php?daymark_app=offline', $rules['^daymark/offline\.html$'] ?? null );
+		$routes->register_app();
+		\WpApp\Registry::add_all_rewrite_rules();
+		$router = \WpApp\Registry::get_apps()[ Daymark_Routes::app_base() ];
+		$this->assertSame( 'app-config.php', $router->get_routes()['config']['template'] );
+		$this->assertSame( 'app-worker.php', $router->get_routes()['worker']['template'] );
+		$this->assertSame( 'app-offline.php', $router->get_routes()['offline']['template'] );
 	}
 
-	/** All three new routes skip the canonical trailing-slash redirect, same as manifest.json already did. */
+	/** All three new routes skip the canonical trailing-slash redirect, same as manifest already did. */
 	public function test_new_routes_skip_canonical_redirect() {
 		$routes = new Daymark_Routes();
-		$routes->register();
+		$routes->register_app();
+		\WpApp\Registry::add_all_rewrite_rules();
 
-		foreach ( array( 'config', 'sw', 'offline' ) as $screen ) {
-			set_query_var( Daymark_Routes::QUERY_VAR, $screen );
+		foreach ( array( 'config', 'worker', 'offline' ) as $screen ) {
+			set_query_var( 'wp_app_path', Daymark_Routes::app_base() );
+			set_query_var( 'wp_app_request', $screen );
 			$this->assertFalse(
 				apply_filters( 'redirect_canonical', home_url( "/daymark/{$screen}/" ) ),
 				"The '{$screen}' screen must serve directly, not bounce through a 301"
 			);
 		}
 
-		set_query_var( Daymark_Routes::QUERY_VAR, '' );
+		set_query_var( 'wp_app_path', '' );
+		set_query_var( 'wp_app_request', '' );
 	}
 
 	/** All placeholders in the served worker are filled, so no literal token reaches a browser. */
@@ -126,7 +124,7 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 
 	/**
 	 * The worker's redaction drops every WordPress nonce before writing
-	 * config.json to Cache Storage: the app nonce, and the one inside the
+	 * config to Cache Storage: the app nonce, and the one inside the
 	 * Log out URL (`_wpnonce`), which wp_logout_url() builds.
 	 */
 	public function test_service_worker_redacts_the_logout_url_nonce_too() {
@@ -179,7 +177,7 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 		$html = (string) ob_get_clean();
 
 		$this->assertStringContainsString( 'offline-boot.js', $html );
-		$this->assertStringContainsString( 'data-config-url="' . esc_url( Daymark_Routes::app_url( 'config.json' ) ), $html );
+		$this->assertStringContainsString( 'data-config-url="' . esc_url( Daymark_Routes::app_url( 'config' ) ), $html );
 		$this->assertStringContainsString( 'data-app-js-url="' . esc_url( DAYMARK_PLUGIN_URL . 'assets/app.js' ), $html );
 	}
 

@@ -2,7 +2,7 @@
 /**
  * Daymark offline-fallback app shell (issue #126).
  *
- * Served by Daymark_Routes at GET /daymark/offline.html, and only ever
+ * Served by Daymark_Routes at GET /daymark/offline, and only ever
  * reached in two ways: precached at service-worker install time
  * (assets/daymark-sw.js), and replayed by that same worker's navigation
  * handler when a real fetch for /daymark* fails (no connectivity).
@@ -20,7 +20,7 @@
  * `data-*` attribute either way.
  *
  * Bootstrap config normally arrives inline (see app-shell.php); here it's
- * fetched by assets/offline-boot.js from GET /daymark/config.json instead —
+ * fetched by assets/offline-boot.js from GET /daymark/config instead —
  * network-first when genuinely online, falling back to the service worker's
  * own redacted (nonce-stripped) cached copy when not. See that file and
  * assets/daymark-sw.js for the rest of the mechanism.
@@ -65,7 +65,7 @@ wp_enqueue_style( 'daymark-app' );
 	<meta name="apple-mobile-web-app-title" content="Daymark" />
 	<meta http-equiv="Content-Security-Policy" content="<?php echo esc_attr( $daymark_offline_csp ); ?>" />
 	<title><?php esc_html_e( 'Daymark', 'daymark' ); ?></title>
-	<link rel="manifest" href="<?php echo esc_url( Daymark_Routes::app_url( 'manifest.json' ) ); ?>" />
+	<link rel="manifest" href="<?php echo esc_url( Daymark_Routes::app_url( 'manifest' ) ); ?>" />
 	<?php /* Home-screen icon (issue #414): always Daymark's own icon, matching the online app shell's own tag — see its comment for why. */ ?>
 	<link rel="apple-touch-icon" sizes="180x180" href="<?php echo esc_url( Daymark_Routes::apple_touch_icon_url() ); ?>" />
 	<link rel="icon" href="<?php echo esc_url( Daymark_Routes::icon_url( 32 ) ); ?>" sizes="32x32" />
@@ -94,7 +94,7 @@ wp_enqueue_style( 'daymark-app' );
 	 * Core's wp-hooks and wp-i18n as plain <script src> tags, not through
 	 * wp_print_scripts(): that would also print wp-i18n's inline setup
 	 * script, which this page's CSP blocks. offline-boot.js loads the
-	 * translations into wp.i18n itself, from config.json.
+	 * translations into wp.i18n itself, from config.
 	 */
 	foreach ( Daymark_Routes::offline_core_script_urls() as $daymark_core_script ) {
 		printf( '<script src="%s"></script>' . "\n", esc_url( $daymark_core_script ) ); // phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedScript -- Printed by hand on purpose; see the comment above.
@@ -102,7 +102,7 @@ wp_enqueue_style( 'daymark-app' );
 	?>
 	<script
 		src="<?php echo esc_url( DAYMARK_PLUGIN_URL . 'assets/offline-boot.js' ); ?>"
-		data-config-url="<?php echo esc_url( Daymark_Routes::app_url( 'config.json' ) ); ?>"
+		data-config-url="<?php echo esc_url( Daymark_Routes::app_url( 'config' ) ); ?>"
 		data-app-js-url="<?php echo esc_url( DAYMARK_PLUGIN_URL . 'assets/app.js' ); ?>"
 	></script>
 </body>

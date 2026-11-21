@@ -21,3 +21,6 @@ playwright-report/
 # Generated hooks documentation site
 wp-hooks-docs/
 !lib/composer.lock
+
+# Runtime WP App package ships with the plugin.
+!lib/framework/composer.lock

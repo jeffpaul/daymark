@@ -5,13 +5,13 @@
  * window.daymarkApp directly.
  *
  * That page has no inline scripts at all (see its own docblock on why), so
- * this file's whole job is: fetch the bootstrap config GET /daymark/config.json
+ * this file's whole job is: fetch the bootstrap config GET /daymark/config
  * would normally supply inline, then load assets/app.js only once that
  * config is actually in place as window.daymarkApp — app.js itself needs no
  * changes at all, since from its perspective the config is simply already
  * there by the time it runs, same as the normal online path.
  *
- * A network-first fetch of config.json always gets a fresh, live REST
+ * A network-first fetch of config always gets a fresh, live REST
  * nonce when one is reachable; only when genuinely offline does the service
  * worker's own cached (deliberately nonce-stripped) copy answer instead —
  * see assets/daymark-sw.js. Either way this never blocks longer than a
@@ -76,7 +76,7 @@
 			configData.offlineShell = true;
 			// The site's translations for app.js. The online shell loads them
 			// with an inline script, which this page can't run, so
-			// config.json carries them instead. Core's wp-i18n is loaded by
+			// config carries them instead. Core's wp-i18n is loaded by
 			// offline-shell.php just before this file.
 			if (configData.localeData && window.wp && window.wp.i18n) {
 				window.wp.i18n.setLocaleData(configData.localeData, 'daymark');

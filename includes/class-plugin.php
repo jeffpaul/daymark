@@ -294,7 +294,7 @@ final class Daymark_Plugin {
 	/**
 	 * Web Share Target handler — lets Daymark appear in the OS share sheet
 	 * ("Share -> Daymark" on iOS/Android), creating a draft from whatever
-	 * was shared. Invoked directly by Daymark_Routes::maybe_load_app_shell()
+	 * was shared. Invoked directly by the app endpoint templates
 	 * on a POST to the /share route; no hooks of its own to register.
 	 *
 	 * @var Daymark_Share_Target
@@ -303,7 +303,7 @@ final class Daymark_Plugin {
 
 	/**
 	 * Bookmarklet popup: Reblog or Like the page you're reading on another
-	 * site. Invoked directly by Daymark_Routes::maybe_load_app_shell() on
+	 * site. Invoked directly by the app endpoint templates on
 	 * the /bookmarklet route; no hooks of its own to register.
 	 *
 	 * @var Daymark_Bookmarklet
@@ -510,7 +510,7 @@ final class Daymark_Plugin {
 	 * @return void
 	 */
 	public function on_plugins_loaded(): void {
-		// Reserved for load-order-sensitive wiring (translations load automatically for WP >= 4.6).
+		$this->routes->register_app();
 	}
 
 	/**
@@ -527,7 +527,6 @@ final class Daymark_Plugin {
 		// and Daymark_Subscription_Poller::schedule().
 		Daymark_Subscriptions::install();
 
-		$this->routes->register();
 		$this->syndication_links->register();
 		$this->like_visibility->register();
 		$this->notes->register();
@@ -624,7 +623,7 @@ final class Daymark_Plugin {
 		// below picks them up.
 		Daymark_Routes::app_base();
 		$routes = new Daymark_Routes();
-		$routes->register();
+		$routes->register_app();
 
 		flush_rewrite_rules();
 

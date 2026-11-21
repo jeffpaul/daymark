@@ -120,14 +120,14 @@ class Test_I18n extends WP_UnitTestCase {
 		$this->assertSame( '—', $method->invoke( null, 12345 ), 'An unmapped code keeps the placeholder' );
 	}
 
-	/** With no translation file (an English site), config.json sends no locale data. */
+	/** With no translation file (an English site), config sends no locale data. */
 	public function test_app_locale_data_is_null_without_translations() {
 		add_filter( 'pre_load_script_translations', '__return_false' );
 
 		$this->assertNull( Daymark_Routes::app_locale_data() );
 	}
 
-	/** With a translation file, config.json sends it in the shape wp.i18n.setLocaleData() takes, under the 'daymark' domain. */
+	/** With a translation file, config sends it in the shape wp.i18n.setLocaleData() takes, under the 'daymark' domain. */
 	public function test_app_locale_data_uses_the_daymark_domain() {
 		add_filter(
 			'pre_load_script_translations',
@@ -196,7 +196,7 @@ class Test_I18n extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'const CORE_SCRIPTS = ' . wp_json_encode( $urls, JSON_UNESCAPED_SLASHES ) . ';', $script );
 	}
 
-	/** offline-boot.js hands config.json's translations to wp.i18n before app.js runs. */
+	/** offline-boot.js hands config's translations to wp.i18n before app.js runs. */
 	public function test_offline_boot_sets_locale_data() {
 		$js = (string) file_get_contents( DAYMARK_PLUGIN_DIR . 'assets/offline-boot.js' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading the plugin's own source.
 

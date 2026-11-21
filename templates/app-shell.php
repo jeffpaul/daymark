@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-$daymark_screen = get_query_var( Daymark_Routes::QUERY_VAR );
+$daymark_screen = Daymark_Plugin::instance()->routes->current_screen();
 $daymark_screen = ( is_string( $daymark_screen ) && '' !== $daymark_screen ) ? $daymark_screen : 'home';
 
 // A site to follow, from a follow link (Daymark_Follow_Link): the app opens
@@ -55,6 +55,8 @@ if ( ! current_user_can( 'edit_posts' ) ) {
 // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encoding random bytes into a CSP nonce, not obfuscating code.
 $daymark_csp_nonce = base64_encode( random_bytes( 16 ) );
 
+$daymark_chromeless = \WpApp\OpenStation::is_chromeless_request();
+
 $daymark_csp_parts = array(
 	"default-src 'self'",
 	"script-src 'self' 'nonce-{$daymark_csp_nonce}'",
@@ -84,7 +86,7 @@ $daymark_csp_parts = array(
 	trim( "font-src 'self' data: " . implode( ' ', Daymark_Settings::app_font_origins() ) ),
 	"object-src 'none'",
 	"base-uri 'self'",
-	"frame-ancestors 'none'",
+	$daymark_chromeless ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
 	"form-action 'self'",
 );
 
@@ -108,7 +110,7 @@ $daymark_requested_type = isset( $_GET['daymark_type'] ) ? sanitize_key( wp_unsl
 // fails that fetch harmlessly rather than needing a second check here.
 $daymark_requested_draft_id = isset( $_GET['daymark_draft'] ) ? absint( wp_unslash( $_GET['daymark_draft'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only navigation param, not a state-changing action.
 
-// One source of truth for this array, shared with GET /daymark/config.json
+// One source of truth for this array, shared with GET /daymark/config
 // (the cold-offline-load path, issue #126) — see build_app_config()'s own
 // docblock in class-routes.php.
 // Set by a push from a favorite site (Daymark_Push::send_favorite_pushes()):
@@ -223,13 +225,13 @@ wp_enqueue_script( 'daymark-app' );
 	<meta name="apple-mobile-web-app-title" content="Daymark" />
 	<title><?php esc_html_e( 'Daymark', 'daymark' ); ?></title>
 	<?php /* Dynamic manifest: start_url/scope track the resolved app base. */ ?>
-	<link rel="manifest" href="<?php echo esc_url( Daymark_Routes::app_url( 'manifest.json' ) ); ?>" />
+	<link rel="manifest" href="<?php echo esc_url( Daymark_Routes::app_url( 'manifest' ) ); ?>" />
 	<?php /* Home-screen icon (issue #414): always Daymark's own icon, never the site's Site Icon — a home-screen install is an install of Daymark, not of the site. Square and fully opaque, since iOS drops a transparent one (see apple_touch_icon_url()). Browser-tab favicon still prefers the Site Icon so an open tab matches the site. */ ?>
 	<link rel="apple-touch-icon" sizes="180x180" href="<?php echo esc_url( Daymark_Routes::apple_touch_icon_url() ); ?>" />
 	<link rel="icon" href="<?php echo esc_url( Daymark_Routes::icon_url( 32 ) ); ?>" sizes="32x32" />
 	<?php wp_print_styles( array( 'daymark-featured-content', 'daymark-app' ) ); ?>
 </head>
-<body class="daymark-app daymark-app--<?php echo esc_attr( $daymark_screen ); ?>">
+<body class="daymark-app daymark-app--<?php echo esc_attr( $daymark_screen ); ?><?php echo $daymark_chromeless ? ' wp-app-chromeless' : ''; ?>">
 	<div id="daymark-app" class="daymark-shell">
 		<p class="daymark-boot"><?php esc_html_e( 'Loading Daymark…', 'daymark' ); ?></p>
 	</div>
@@ -237,5 +239,11 @@ wp_enqueue_script( 'daymark-app' );
 		<p class="daymark-noscript"><?php esc_html_e( 'Daymark needs JavaScript. Please enable it and reload.', 'daymark' ); ?></p>
 	</noscript>
 	<?php wp_print_scripts( array( 'daymark-featured-content', 'daymark-app' ) ); ?>
+	<?php
+	// The launcher enqueues its window bridge before the framework renders.
+	if ( $daymark_chromeless && wp_script_is( 'os-iframe-bridge', 'enqueued' ) ) {
+		wp_print_scripts( array( 'os-iframe-bridge' ) );
+	}
+	?>
 </body>
 </html>

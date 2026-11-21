@@ -1,13 +1,13 @@
 /**
  * Daymark service worker (issue #126: cold-offline-load support).
  *
- * Served at /daymark/sw.js (Daymark_Routes, class-routes.php — a plain
+ * Served at /daymark/worker (Daymark_Routes, class-routes.php — a plain
  * templated echo of this exact file, string substitutions for
  * __DAYMARK_ASSETS_URL__ and __DAYMARK_CACHE_VERSION__) rather than as a static file under the plugin's
  * own assets/ directory. That URL is what lets this worker's registration
  * scope cover every /daymark* route with NO Service-Worker-Allowed header:
  * per the Service Worker spec, a worker's maximum scope defaults to the
- * directory of its own script URL — serving it AT /daymark/sw.js means that
+ * directory of its own script URL — serving it AT /daymark/worker means that
  * directory already IS /daymark/, for free.
  *
  * Caches only these, all safe to persist indefinitely:
@@ -23,8 +23,8 @@
  *   leaving the offline shell's own container permanently stuck on "Loading
  *   Daymark…" with no error surfaced anywhere.
  * - the offline-fallback shell (templates/offline-shell.php, served at
- *   /daymark/offline.html) — precached at install time
- * - GET /daymark/config.json's response, but ONLY after stripping its
+ *   /daymark/offline) — precached at install time
+ * - GET /daymark/config's response, but ONLY after stripping its
  *   `nonce` field first — see the fetch handler below, and the
  *   'daymark-warm-config-cache' message handler it shares its redaction
  *   logic with (redactAndCacheConfig()). The live response itself (nonce
@@ -34,7 +34,7 @@
  * NEVER cached, at all, under any circumstance:
  * - Any real /wp-json/ REST response
  * - A WP nonce, in the sense of anything ever written to Cache Storage —
- *   config.json's own nonce field is deleted before the redacted copy is
+ *   config's own nonce field is deleted before the redacted copy is
  *   stored (see above)
  * - /wp-admin/, /wp-login.php, anything not GET
  * - The real, dynamic, per-request /daymark* navigation response itself
@@ -84,7 +84,7 @@ self.addEventListener('install', (event) => {
 					ASSETS_BASE_URL + 'featured-content.css',
 					ASSETS_BASE_URL + 'featured-content.js',
 					ASSETS_BASE_URL + 'note-length.js',
-					scopePath + 'offline.html',
+					scopePath + 'offline',
 					...CORE_SCRIPTS,
 				])
 			)
@@ -123,7 +123,7 @@ self.addEventListener('activate', (event) => {
 // that same worker's fetch handler yet — confirmed via CI: the page's
 // own fetch settled fine (a live 200 response reached it in well under
 // a second) while the redact+cache.put side effect the fetch handler's
-// config.json branch is supposed to perform never ran at all. A message
+// config branch is supposed to perform never ran at all. A message
 // posted directly to registration.active has no such dependency on
 // fetch-interception timing, so this does the identical fetch-and-cache
 // work from inside the worker itself instead — the same mechanism the
@@ -146,7 +146,7 @@ self.addEventListener('message', (event) => {
 			fetch(event.data.url, { credentials: 'same-origin' })
 				.then((response) => (response.ok ? redactAndCacheConfig(event.data.url, response) : undefined))
 				.catch(() => {
-					/* Best-effort warming only — a later real config.json
+					/* Best-effort warming only — a later real config
 					 * request still redacts+caches normally via the fetch
 					 * handler below. */
 				})
@@ -154,7 +154,7 @@ self.addEventListener('message', (event) => {
 	}
 });
 
-// Shared by the fetch handler's config.json branch below and the
+// Shared by the fetch handler's config branch below and the
 // 'daymark-warm-config-cache' message handler above — the only
 // difference between the two callers is where `response` came from
 // (an intercepted page fetch vs. one made directly inside the worker).
@@ -227,7 +227,7 @@ self.addEventListener('fetch', (event) => {
 					.then((response) => {
 						if (response.ok) {
 							const copy = response.clone();
-							// Same event.waitUntil() reasoning as the config.json
+							// Same event.waitUntil() reasoning as the config
 							// branch below: without it, the cache write can lose
 							// the race against the worker being torn down once
 							// respondWith()'s own promise has already resolved.
@@ -244,7 +244,7 @@ self.addEventListener('fetch', (event) => {
 		return;
 	}
 
-	// config.json: network-first, since a live fetch always carries a fresh
+	// config: network-first, since a live fetch always carries a fresh
 	// nonce a cached copy never should. The redacted (nonce-stripped) copy
 	// is what actually answers a later offline request. This branch is what
 	// answers a *live* fetch for it (assets/offline-boot.js's own, or any
@@ -259,7 +259,7 @@ self.addEventListener('fetch', (event) => {
 	// browser is free to consider the fetch event fully handled and tear
 	// the worker down at that point, aborting the still-in-flight cache
 	// write. waitUntil() tells it there's more work to wait for.
-	if (url.pathname === scopePath + 'config.json') {
+	if (url.pathname === scopePath + 'config') {
 		event.respondWith(
 			fetch(event.request)
 				.then((response) => {
@@ -284,7 +284,7 @@ self.addEventListener('fetch', (event) => {
 	// wouldn't startsWith('/daymark/') since it's shorter than the scope
 	// prefix in that one case.
 	if ('navigate' === event.request.mode && (url.pathname + '/').startsWith(scopePath)) {
-		event.respondWith(fetch(event.request).catch(() => caches.match(scopePath + 'offline.html')));
+		event.respondWith(fetch(event.request).catch(() => caches.match(scopePath + 'offline')));
 		return;
 	}
 

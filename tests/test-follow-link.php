@@ -20,7 +20,8 @@ class Test_Follow_Link extends WP_UnitTestCase {
 	}
 
 	public function tear_down(): void {
-		set_query_var( Daymark_Routes::QUERY_VAR, '' );
+		set_query_var( 'wp_app_path', '' );
+		set_query_var( 'wp_app_request', '' );
 
 		parent::tear_down();
 	}
@@ -73,7 +74,8 @@ class Test_Follow_Link extends WP_UnitTestCase {
 
 	public function test_the_app_reads_a_follow_link_itself() {
 		$_GET[ Daymark_Follow_Link::QUERY_VAR ] = 'example.com';
-		set_query_var( Daymark_Routes::QUERY_VAR, 'home' );
+		set_query_var( 'wp_app_path', Daymark_Routes::app_base() );
+		set_query_var( 'wp_app_request', '' );
 
 		$this->assertSame( '', Daymark_Follow_Link::redirect_url() );
 	}

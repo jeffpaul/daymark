@@ -15,7 +15,7 @@
 	// wp.i18n backs every translated string (issue #253). The online app
 	// shell loads it as a dependency of this script (templates/app-shell.php),
 	// and the offline-fallback shell loads core's own copy too, with the
-	// site's translations taken from config.json (templates/offline-shell.php,
+	// site's translations taken from config (templates/offline-shell.php,
 	// assets/offline-boot.js). This fallback only runs if wp.i18n still
 	// failed to load, for example from an old cache. Without it,
 	// destructuring wp.i18n would throw and stop this whole script before
@@ -22536,7 +22536,7 @@
 	// page load. Asking on return to the foreground means a plugin update
 	// installs in the background and is used from the next launch, rather
 	// than waiting until the phone happens to close the app. At most once
-	// an hour, since each check is a request for /daymark/sw.js.
+	// an hour, since each check is a request for /daymark/worker.
 	let lastAppUpdateCheck = Date.now();
 	function checkForAppUpdate() {
 		if (!('serviceWorker' in navigator) || config.offlineShell || !navigator.onLine) {
@@ -22631,8 +22631,8 @@
 
 	// --- Service worker (PWA; cold-offline-load support, issue #126) ---
 	//
-	// Registered at /daymark/sw.js (a plain templated echo of
-	// assets/daymark-sw.js — see Daymark_Routes::maybe_load_app_shell()),
+	// Registered at /daymark/worker (a plain templated echo of
+	// assets/daymark-sw.js — see templates/app-worker.php),
 	// not the static file under the plugin's own assets/ directory, and
 	// with an explicit scope covering the app's own base (config.appUrl,
 	// e.g. /daymark/) — this is what lets the worker actually control
@@ -22640,11 +22640,6 @@
 	// assets-directory-only scope this registration used before. See
 	// assets/daymark-sw.js's own docblock for exactly what that worker
 	// does and doesn't cache under this wider scope.
-	//
-	// A stale registration at the old, narrower scope (assetsUrl) is
-	// explicitly unregistered first — it never controlled any real page
-	// anyway (see daymark-sw.js's own history), so this is just cleanup,
-	// not a behavior change for anyone already running it.
 	//
 	// Feature-detected and failure-tolerant throughout: if registration
 	// fails (HTTP-only local sites, older browsers), the app works
@@ -22659,22 +22654,9 @@
 
 	if ('serviceWorker' in navigator && config.appUrl) {
 		navigator.serviceWorker
-			.getRegistrations()
-			.then((registrations) => {
-				registrations.forEach((registration) => {
-					if (config.assetsUrl && registration.scope === config.assetsUrl) {
-						registration.unregister().catch(() => {});
-					}
-				});
-			})
-			.catch(() => {})
-			.then(() =>
-				navigator.serviceWorker.register(config.appUrl + 'sw.js', { scope: config.appUrl }).catch(() => {
-					/* Never let SW registration break the app. */
-				})
-			)
+			.register(config.appUrl + 'worker', { scope: config.appUrl })
 			.then(() => {
-				// Warms the service worker's own redacted config.json cache
+				// Warms the service worker's own redacted config cache
 				// (issue #126) — this normal, inline-configured boot path
 				// never otherwise has a reason to fetch that endpoint (it
 				// already has window.daymarkApp), but without this, a
@@ -22709,7 +22691,7 @@
 							if (registration.active) {
 								registration.active.postMessage({
 									type: 'daymark-warm-config-cache',
-									url: config.appUrl + 'config.json',
+									url: config.appUrl + 'config',
 								});
 							}
 						})
