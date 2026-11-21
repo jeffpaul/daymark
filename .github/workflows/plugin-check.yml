@@ -32,10 +32,16 @@ jobs:
       - name: Check what ships
         run: bin/check-dist.sh
 
+      - name: Set up PHP for runtime dependencies
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.2'
+          tools: composer
+          coverage: none
+
       - name: Build distribution copy (respects .distignore)
         run: |
-          mkdir -p /tmp/dist/daymark
-          rsync -a --exclude-from=.distignore --exclude='.git' ./ /tmp/dist/daymark/
+          bash bin/build-dist.sh /tmp/dist/daymark
 
       - name: Run plugin check
         uses: WordPress/plugin-check-action@10857da14b6c2246d15402b3e69f777edcf8c12e # v1.1.9
@@ -44,3 +50,13 @@ jobs:
           # Treat a warning as an error. A finding that is a false positive
           # gets a `phpcs:ignore` with its reason, next to the code.
           strict: true
+
+      - name: Archive installable plugin
+        run: cd /tmp/dist && zip -rq "$RUNNER_TEMP/daymark.zip" daymark
+
+      - name: Upload installable plugin
+        uses: actions/upload-artifact@v7
+        with:
+          name: daymark-dist
+          path: ${{ runner.temp }}/daymark.zip
+          retention-days: 7

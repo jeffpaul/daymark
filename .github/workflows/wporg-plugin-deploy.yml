@@ -66,6 +66,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up PHP for runtime dependencies
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.2'
+          tools: composer
+          coverage: none
+
+      - name: Install runtime dependencies for deployment
+        run: bash bin/build-framework.sh
+
       # The action copies all of .wordpress-org/ into SVN `assets`, folders
       # included. Only the files at its top level are wordpress.org assets;
       # folders such as src/ hold the large originals they were made from.

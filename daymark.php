@@ -24,6 +24,25 @@ define( 'DAYMARK_PLUGIN_FILE', __FILE__ );
 define( 'DAYMARK_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DAYMARK_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
+// Source installs need Composer; release ZIPs already contain the runtime.
+if ( ! is_readable( DAYMARK_PLUGIN_DIR . 'lib/framework/packages/autoload.php' ) ) {
+	add_action(
+		'admin_notices',
+		static function () {
+			echo '<div class="notice notice-error"><p>';
+			esc_html_e( 'Daymark needs its runtime dependencies. Install the release ZIP or run composer install --working-dir=lib/framework --no-dev in the plugin directory.', 'daymark' );
+			echo '</p></div>';
+		}
+	);
+	register_activation_hook(
+		__FILE__,
+		static function () {
+			wp_die( esc_html__( 'Daymark needs its runtime dependencies. Install the release ZIP or run composer install --working-dir=lib/framework --no-dev in the plugin directory.', 'daymark' ) );
+		}
+	);
+	return;
+}
+
 // Shared framework stays unprefixed so other WP Apps use the same registry.
 require_once DAYMARK_PLUGIN_DIR . 'lib/framework/packages/autoload.php';
 

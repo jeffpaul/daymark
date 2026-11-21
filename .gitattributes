@@ -47,5 +47,6 @@ playwright.config.js export-ignore
 README.md          export-ignore
 wp-hooks-doc.json  export-ignore
 
-lib/framework/composer.json export-ignore
-lib/framework/composer.lock export-ignore
+# Source archives need the runtime manifest for Composer setup.
+lib/framework/composer.json -export-ignore
+lib/framework/composer.lock -export-ignore

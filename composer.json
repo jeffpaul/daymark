@@ -1,6 +1,6 @@
 {
     "name": "jeffpaul/daymark",
-    "description": "Daymark, your own social app for WordPress. Dev dependencies for testing only.",
+    "description": "Daymark, your own social app for WordPress.",
     "type": "wordpress-plugin",
     "license": "GPL-2.0-or-later",
     "require-dev": {
@@ -16,7 +16,14 @@
         "phpcs": "phpcs",
         "phpcs:fix": "phpcbf",
         "phpcs-tests": "phpcs --standard=phpcs-tests.xml.dist",
-        "phpcompat": "phpcs --standard=PHPCompatibility --runtime-set testVersion 8.2- daymark.php uninstall.php includes templates"
+        "phpcompat": "phpcs --standard=PHPCompatibility --runtime-set testVersion 8.2- daymark.php uninstall.php includes templates",
+        "build:framework": "bash bin/build-framework.sh",
+        "post-install-cmd": [
+            "@build:framework"
+        ],
+        "post-update-cmd": [
+            "@build:framework"
+        ]
     },
     "config": {
         "allow-plugins": {

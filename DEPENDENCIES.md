@@ -10,8 +10,10 @@ every release. Checked at each release (see CONTRIBUTING.md, "Releasing").
 Daymark bundles `akirk/wp-app` (^2.2) without namespace prefixing so WP Apps
 share the framework registry and launcher integration across plugins. Its
 separate manifest and lockfile live in `lib/framework/`; run
-`bash bin/build-framework.sh` to reproduce `lib/framework/packages/`. Commit
-the generated package together with its lockfile. Daymark keeps its existing
+`bash bin/build-framework.sh` to install `lib/framework/packages/`. Only the
+manifest and lockfile are committed; generated dependencies are ignored.
+Root `composer install` also installs the runtime. `bin/build-dist.sh` installs
+the locked runtime in a temporary directory and includes it in the release ZIP. Daymark keeps its existing
 PWA, offline cache, and push worker rather than enabling the framework PWA.
 
 Daymark registers screens and extensionless endpoints within one WpApp
