@@ -1,0 +1,50 @@
+{
+  "$schema": "https://playground.wordpress.net/blueprint-schema.json",
+  "meta": {
+    "title": "Daymark",
+    "description": "Try Daymark in a throwaway WordPress. Opens the Daymark app with sample Marks and four sites already followed.",
+    "author": "jeffpaul"
+  },
+  "preferredVersions": {
+    "php": "latest",
+    "wp": "latest"
+  },
+  "login": true,
+  "landingPage": "/daymark",
+  "steps": [
+    {
+      "step": "setSiteOptions",
+      "options": {
+        "permalink_structure": "/%postname%/"
+      }
+    },
+    {
+      "step": "installPlugin",
+      "pluginData": {
+        "resource": "wordpress.org/plugins",
+        "slug": "daymark"
+      },
+      "pluginZipFile": {
+        "resource": "wordpress.org/plugins",
+        "slug": "daymark"
+      },
+      "options": {
+        "activate": true
+      }
+    },
+    {
+      "step": "writeFiles",
+      "writeToPath": "/wordpress/wp-content/daymark-demo",
+      "filesTree": {
+        "resource": "git:directory",
+        "url": "https://github.com/jeffpaul/daymark",
+        "ref": "main",
+        "path": ".github/blueprints"
+      }
+    },
+    {
+      "step": "runPHP",
+      "code": "<?php\nrequire_once '/wordpress/wp-load.php';\n\n// Everything the preview shows (the followed sites, the sample Marks) is set\n// up by one script, shared with the pull request previews. The released\n// plugin does not carry it, so an earlier step copied its folder here.\n$demo = WP_CONTENT_DIR . '/daymark-demo/set-up-demo.php';\nif ( file_exists( $demo ) ) {\n\trequire $demo;\n}\n"
+    }
+  ]
+}
