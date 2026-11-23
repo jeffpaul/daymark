@@ -1,8 +1,8 @@
 === Daymark ===
 Contributors:      jeffpaul
 Tags:              social, rss, publishing, syndication, indieweb
-Requires at least: 7.0
-Tested up to:      7.1
+Requires at least: 7.1
+Tested up to:      7.2
 Requires PHP:      8.2
 Stable tag:        0.23.0
 License:           GPL-2.0-or-later

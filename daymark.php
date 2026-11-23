@@ -4,7 +4,7 @@
  * Plugin URI:        https://github.com/jeffpaul/daymark
  * Description:       Your own social app: follow your friends in one calm, chronological feed, and post from your phone to your site and the networks you use.
  * Version:           0.23.0
- * Requires at least: 7.0
+ * Requires at least: 7.1
  * Requires PHP:      8.2
  * Author:            Jeffrey Paul
  * Author URI:        https://github.com/jeffpaul

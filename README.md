@@ -172,7 +172,7 @@ how that works from a user's side.
 
 ### Requirements
 
-- WordPress 7.0+ (the bundled AI Client powers optional AI Assist)
+- WordPress 7.1+ (the bundled AI Client powers optional AI Assist)
 - PHP 8.2+
 - To like subscribed posts: nothing extra for sites that accept Webmentions,
   which includes every Daymark site (Daymark sends and receives Webmentions
