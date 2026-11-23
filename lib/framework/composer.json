@@ -3,16 +3,10 @@
     "description": "Shared WP App runtime bundled with Daymark.",
     "license": "GPL-2.0-or-later",
     "require": {
-        "akirk/wp-app": "dev-memex-offline-framework#8f6eacf3945f480f02ac2f7ebed43f9aa0d20af3 as 2.3.0"
+        "akirk/wp-app": "^2.3"
     },
     "config": {
         "vendor-dir": "packages",
         "autoloader-suffix": "DaymarkWpApp"
-    },
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/akirk/wp-app.git"
-        }
-    ]
+    }
 }
