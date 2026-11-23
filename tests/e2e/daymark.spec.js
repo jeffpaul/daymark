@@ -3649,6 +3649,14 @@ test('search shows a result count and loads more past the first 20', async ({ pa
 		}
 	}, tag);
 
+	// Search asks for its next page when the end of the list is two screens
+	// below (NEXT_PAGE_LOOKAHEAD in app.js). Twenty short results are not
+	// much taller than that on a phone, so on a full-height screen the
+	// second page can arrive by itself before the checks below run. A short
+	// screen keeps the end of the first page well out of reach until the
+	// test scrolls to it.
+	await page.setViewportSize({ width: 390, height: 400 });
+
 	await page.goto('/daymark/search');
 	await page.fill('[data-search-input]', tag);
 	const results = page.locator('[data-search-results] .daymark-recent__item');
