@@ -1,8 +1,8 @@
 name: PR Playground Preview
 
 # Adds a "Preview in WordPress Playground" button to the PR as a managed
-# comment. No build step needed — the plugin is plain PHP/JS, so the
-# blueprint installs it straight from the PR branch via git:directory.
+# comment. The blueprint installs the PR branch and its WP App runtime
+# separately, because Git checkouts do not include Composer dependencies.
 #
 # Why a comment and not the PR description: this repo squash-merges using
 # the PR title + description as the commit message (so Co-authored-by
@@ -100,6 +100,7 @@ jobs:
 
           const blueprint = {
             preferredVersions: {
+              php: '8.3',
               // WP 7.0+ required; 'latest' is 7.0 as of May 2026 (Armstrong).
               wp: 'latest',
             },
@@ -140,8 +141,41 @@ jobs:
                   path: '/',
                 },
                 options: {
-                  activate: true,
+                  activate: false,
+                  targetFolderName: 'daymark',
                 },
+              },
+              // Follow WP App main, as the sibling app previews do. Keep the full package
+              // (including assets and composer.json), not just its src folder.
+              {
+                step: 'writeFiles',
+                writeToPath: '/wordpress/wp-content/plugins/daymark/lib/framework/packages/akirk/wp-app',
+                filesTree: {
+                  resource: 'git:directory',
+                  url: 'https://github.com/akirk/wp-app',
+                  ref: 'main',
+                  refType: 'branch',
+                  path: '/',
+                },
+              },
+              {
+                // WP App uses Composer's files autoloading only. Read its
+                // manifest so new files and their load order stay in sync.
+                step: 'writeFile',
+                path: '/wordpress/wp-content/plugins/daymark/lib/framework/packages/autoload.php',
+                data: [
+                  '<?php',
+                  "$package = __DIR__ . '/akirk/wp-app';",
+                  "$manifest = json_decode( file_get_contents( $package . '/composer.json' ), true, 512, JSON_THROW_ON_ERROR );",
+                  "foreach ( $manifest['autoload']['files'] as $file ) {",
+                  "\trequire_once $package . '/' . $file;",
+                  '}',
+                  '',
+                ].join('\n'),
+              },
+              {
+                step: 'activatePlugin',
+                pluginPath: 'daymark/daymark.php',
               },
               {
                 step: 'runPHP',

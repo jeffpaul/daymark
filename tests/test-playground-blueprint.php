@@ -74,6 +74,15 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 		$this->assertSame( array(), glob( $this->repo_path( '.github/blueprints/*.json' ) ) );
 	}
 
+	/** The preview loader must support the runtime dependency structure. */
+	public function test_pr_preview_loader_supports_runtime_dependencies(): void {
+		$lock = json_decode( (string) file_get_contents( $this->repo_path( 'lib/framework/composer.lock' ) ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local repository file.
+
+		$this->assertCount( 1, $lock['packages'], 'The preview loader supports the WP App package only; update it when adding runtime dependencies.' );
+		$this->assertSame( 'akirk/wp-app', $lock['packages'][0]['name'] );
+		$this->assertSame( array( 'files' ), array_keys( $lock['packages'][0]['autoload'] ), 'The preview loader must support every autoload mechanism the runtime uses.' );
+	}
+
 	/**
 	 * Neither the blueprint nor the pull request preview carries demo
 	 * content of its own: no list of sites to follow, no call that follows
