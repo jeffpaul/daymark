@@ -1,6 +1,7 @@
-// Daymark on screens that are not an ordinary phone: the side rail and the
-// wider column on a tablet, laptop or desktop, and the iPhone Duo's sizes
-// (closed, closed and turned, sharing its open screen, and opened mid-draft).
+// Daymark on screens that are not a phone held upright: the side rail and
+// the wider column on a tablet, laptop or desktop, the compact rail on a
+// phone turned sideways, and the iPhone Duo's sizes (closed, closed and
+// turned, open, open and turned, and sharing its open screen).
 //
 // The Duo's sizes are the ones Safari 27.1 gives a page, from the WebKit
 // blog's "WebKit Features for Safari 27.1": 382 x 580 closed, 594 x 368
@@ -21,6 +22,10 @@ const DUO_CLOSED_SIDEWAYS = { width: 594, height: 368 };
 const DUO_OPEN = { width: 951, height: 585 };
 const DUO_OPEN_TURNED = { width: 669, height: 867 };
 const DUO_SHARED = { width: 385, height: 571 };
+// An ordinary phone on its side (an iPhone 13 in Safari, roughly), and a
+// window too short to stack four tabs and the new Mark button.
+const PHONE_SIDEWAYS = { width: 844, height: 340 };
+const TOO_SHORT = { width: 700, height: 260 };
 
 // The launcher's first-tap explainer would sit in front of every test
 // that opens it, and a saved reading position would open the Timeline
@@ -323,16 +328,101 @@ test.describe( 'iPhone Duo, closed', () => {
 test.describe( 'iPhone Duo, closed and turned sideways', () => {
 	test.use( { viewport: DUO_CLOSED_SIDEWAYS } );
 
-	test( 'the tabs stay along the bottom and the Mark types fit', async ( { page } ) => {
+	test( 'the tabs are a slim rail down the side, so the page gets the full height', async ( { page } ) => {
 		await openApp( page );
-		const bar = await boxOf( page.locator( '.daymark-homefooter' ) );
-		expect( bar.bottom ).toBe( DUO_CLOSED_SIDEWAYS.height );
-		expect( bar.height ).toBeLessThan( 120 );
+
+		const rail = await boxOf( page.locator( '.daymark-homefooter' ) );
+		expect( rail.left ).toBe( 0 );
+		expect( rail.top ).toBe( 0 );
+		expect( rail.height ).toBe( DUO_CLOSED_SIDEWAYS.height );
+		expect( rail.width ).toBeLessThanOrEqual( 72 );
+
+		// Four tabs and the new Mark button, one under the other, all on
+		// this short screen without scrolling.
+		let previousBottom = 0;
+		for ( const tab of await page.locator( '.daymark-bottomnav__link' ).all() ) {
+			const box = await boxOf( tab );
+			expectOnScreen( box, DUO_CLOSED_SIDEWAYS );
+			expect( box.top ).toBeGreaterThanOrEqual( previousBottom );
+			expect( box.height ).toBeGreaterThanOrEqual( 44 );
+			previousBottom = box.bottom;
+		}
+		const button = await boxOf( page.locator( '[data-action="new-mark"]' ) );
+		expectOnScreen( button, DUO_CLOSED_SIDEWAYS );
+		expect( button.top ).toBeGreaterThanOrEqual( previousBottom );
+
+		// Icons only: names would not fit this height in every language.
+		for ( const name of await page.locator( '.daymark-bottomnav__label' ).all() ) {
+			await expect( name ).toBeHidden();
+		}
+	} );
+
+	test( 'the column keeps its phone width, beside the rail', async ( { page } ) => {
+		await openApp( page );
+
+		const rail = await boxOf( page.locator( '.daymark-homefooter' ) );
+		const column = await boxOf( page.locator( '.daymark-shell' ) );
+		expect( column.width ).toBe( 480 );
+		expect( column.left ).toBeGreaterThanOrEqual( rail.right );
+		expect( column.right ).toBeLessThanOrEqual( DUO_CLOSED_SIDEWAYS.width );
+		expect( await page.evaluate( () => document.documentElement.scrollWidth ) ).toBe( DUO_CLOSED_SIDEWAYS.width );
+	} );
+
+	test( 'the new Mark types open beside the rail and fit', async ( { page } ) => {
+		await openApp( page );
+		const rail = await boxOf( page.locator( '.daymark-homefooter' ) );
 
 		await openLauncher( page );
-		for ( const box of await launcherBubbleBoxes( page ) ) {
+		const boxes = await launcherBubbleBoxes( page );
+		expect( boxes ).toHaveLength( 5 );
+		for ( const box of boxes ) {
 			expectOnScreen( box, DUO_CLOSED_SIDEWAYS );
+			expect( box.left ).toBeGreaterThanOrEqual( rail.right );
 		}
+		for ( let i = 0; i < boxes.length; i++ ) {
+			for ( let j = i + 1; j < boxes.length; j++ ) {
+				expect( overlaps( boxes[ i ], boxes[ j ] ), `types ${ i } and ${ j } overlap` ).toBe( false );
+			}
+		}
+		for ( const label of await page.locator( '.daymark-launcher__label' ).all() ) {
+			expectOnScreen( await boxOf( label ), DUO_CLOSED_SIDEWAYS );
+		}
+
+		await page.locator( '[data-launcher-type="note"]' ).click();
+		await expect( page.locator( '#daymark-caption' ) ).toBeVisible();
+	} );
+
+	test( 'the composer sits where the Timeline did, and a message shows clear of the rail', async ( { page } ) => {
+		await openApp( page );
+		const rail = await boxOf( page.locator( '.daymark-homefooter' ) );
+		const timeline = await boxOf( page.locator( '.daymark-shell' ) );
+
+		await openComposer( page );
+		const composer = await boxOf( page.locator( '.daymark-shell' ) );
+		expect( composer.left ).toBe( timeline.left );
+		expect( composer.width ).toBe( timeline.width );
+
+		await page.fill( '#daymark-caption', 'E2E sideways draft' );
+		await page.locator( '.daymark-backlink' ).click();
+		const bar = page.locator( '.daymark-msgbar' );
+		await expect( bar ).toContainText( 'Saved to Drafts.' );
+		const box = await boxOf( bar );
+		expectOnScreen( box, DUO_CLOSED_SIDEWAYS );
+		expect( box.left ).toBeGreaterThanOrEqual( rail.right );
+		expect( box.top ).toBeGreaterThan( DUO_CLOSED_SIDEWAYS.height * 0.6 );
+	} );
+
+	test( 'the Timeline\'s new posts button sits over the column, not over the rail side', async ( { page } ) => {
+		await openApp( page );
+		// The button only shows when newer posts wait above the reader's
+		// place; its position is what matters here. A style rather than
+		// the hidden attribute, which the Timeline sets again as it loads.
+		await page.addStyleTag( { content: '.daymark-newposts[hidden] { display: inline-flex !important; }' } );
+
+		const button = await boxOf( page.locator( '[data-new-posts]' ) );
+		const column = await boxOf( page.locator( '.daymark-shell' ) );
+		const middle = ( box ) => box.left + box.width / 2;
+		expect( Math.abs( middle( button ) - middle( column ) ) ).toBeLessThanOrEqual( 1 );
 	} );
 
 	test( 'Publish and the destinations sheet\'s Done button can be reached', async ( { page } ) => {
@@ -350,6 +440,53 @@ test.describe( 'iPhone Duo, closed and turned sideways', () => {
 		expectOnScreen( await boxOf( done ), DUO_CLOSED_SIDEWAYS );
 		await done.click();
 		await expect( done ).toBeHidden();
+	} );
+
+	test( 'turning the phone upright again puts the tabs back along the bottom', async ( { page } ) => {
+		await openApp( page );
+		const footer = page.locator( '.daymark-homefooter' );
+		expect( ( await boxOf( footer ) ).height ).toBe( DUO_CLOSED_SIDEWAYS.height );
+
+		await page.setViewportSize( DUO_CLOSED );
+		const bar = await boxOf( footer );
+		expect( bar.width ).toBe( DUO_CLOSED.width );
+		expect( bar.bottom ).toBe( DUO_CLOSED.height );
+		const column = await boxOf( page.locator( '.daymark-shell' ) );
+		expect( column.left ).toBe( 0 );
+		expect( column.width ).toBe( DUO_CLOSED.width );
+	} );
+} );
+
+test.describe( 'any other phone turned sideways', () => {
+	test.use( { viewport: PHONE_SIDEWAYS } );
+
+	test( 'gets the same slim rail, with every tab and the new Mark button on screen', async ( { page } ) => {
+		await openApp( page );
+
+		const rail = await boxOf( page.locator( '.daymark-homefooter' ) );
+		expect( rail.left ).toBe( 0 );
+		expect( rail.height ).toBe( PHONE_SIDEWAYS.height );
+		expect( rail.width ).toBeLessThanOrEqual( 72 );
+		for ( const tab of await page.locator( '.daymark-bottomnav__link' ).all() ) {
+			expectOnScreen( await boxOf( tab ), PHONE_SIDEWAYS );
+		}
+		expectOnScreen( await boxOf( page.locator( '[data-action="new-mark"]' ) ), PHONE_SIDEWAYS );
+
+		// Still the phone's column, not the tablet's wider one.
+		const column = await boxOf( page.locator( '.daymark-shell' ) );
+		expect( column.width ).toBe( 480 );
+		expect( column.left ).toBeGreaterThanOrEqual( rail.right );
+	} );
+} );
+
+test.describe( 'a window too short for a rail', () => {
+	test.use( { viewport: TOO_SHORT } );
+
+	test( 'keeps the tabs along the bottom', async ( { page } ) => {
+		await openApp( page );
+		const bar = await boxOf( page.locator( '.daymark-homefooter' ) );
+		expect( bar.bottom ).toBe( TOO_SHORT.height );
+		expect( bar.height ).toBeLessThan( 120 );
 	} );
 } );
 
