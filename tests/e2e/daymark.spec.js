@@ -2510,6 +2510,34 @@ test('Timeline cards: image Mark gets the media-dominant layout, Note Mark stays
 	await expect(noteCard.locator('.daymark-recent__thumbwrap--media')).toHaveCount(0);
 });
 
+// A card's picture is marked to load only as it nears the screen, so a long
+// Timeline doesn't fetch a whole page of photos at once. One that is on
+// screen still loads.
+test('Timeline cards: a card picture is lazy and still loads on screen', async ({ page }) => {
+	const caption = `E2E lazy card ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await openComposer(page, 'image');
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
+	await describePhoto(page, `E2E alt ${RUN_ID}`);
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="publish"]').click();
+	await expectPublished(page);
+
+	await page.goto('/daymark');
+
+	const thumb = page
+		.locator('.daymark-recent__item-wrap')
+		.filter({ hasText: caption })
+		.locator('.daymark-recent__thumbwrap--media .daymark-recent__thumb');
+	await expect(thumb).toHaveAttribute('loading', 'lazy');
+	await expect(thumb).toHaveAttribute('decoding', 'async');
+	await thumb.scrollIntoViewIfNeeded();
+	await expect.poll(() => thumb.evaluate((img) => img.complete && img.naturalWidth > 0)).toBe(true);
+});
+
 // With no title typed, the site makes one from the caption's first words.
 // The card and the post view don't show that title above the caption it
 // repeats: they show the caption once (publishing audit R10). A typed title

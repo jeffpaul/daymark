@@ -31,6 +31,7 @@ can't act on them.
 - Settings -> Daymark -> General now has one "Save changes" button at the bottom, in place of a Save button in each of its eight sections. One press saves everything on the page, so a change in one section is no longer lost by pressing Save in another. ([#635](https://github.com/jeffpaul/daymark/pull/635))
 - The font setting in Settings -> Daymark -> General now lists every font in your site's Font Library, both the ones you added and the ones your theme brings. Pick one and the Daymark app shows its text in it. ([#638](https://github.com/jeffpaul/daymark/pull/638))
 - On Explore, Look back now sits just above the People row, so your own memories are the first thing under the search box (and under your recent searches, when you have any) without scrolling past People and Your tags. ([#637](https://github.com/jeffpaul/daymark/pull/637))
+- Pictures on Timeline, Search and Bookmarks cards, and pictures inside a post you open, now load as you scroll toward them instead of all at once, so a long feed opens faster and uses less mobile data. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
 
 ### Removed
 
@@ -39,6 +40,7 @@ can't act on them.
 ### Fixed
 
 - Daymark's page on wordpress.org no longer cuts off its description and its changelog. Both were longer than wordpress.org shows, so the list of outside services stopped partway through and the changelog stopped inside an older release. The details of what your site sends to sites you follow now sit in the FAQ, and the changelog lists the three most recent releases. ([#630](https://github.com/jeffpaul/daymark/pull/630))
+- Following a site now finds its feed when the page writes its feed link without quotes, as many speed-optimized sites do. Before, Daymark could miss it. A feed link the site has commented out is no longer offered. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
 
 ### Developer
 

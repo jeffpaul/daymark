@@ -72,6 +72,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-url-guard.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-outbound-guard.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-parse-this.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-html-cache.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-link-tags.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-content-sniffer.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-interaction.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscriptions.php';

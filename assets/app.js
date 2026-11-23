@@ -1036,10 +1036,15 @@
 	 * than not) wired to degrade to a glyph span in the same visual slot on
 	 * load failure, rather than the browser's broken-image icon. Pairs with
 	 * the single delegated 'error' listener registered at boot below.
+	 *
+	 * Every card picture and site icon comes through here, so they are all
+	 * lazy: a page of the Timeline is twenty cards, and only the ones near
+	 * the screen should fetch their picture. Each slot has its size set in
+	 * CSS, so a picture arriving later moves nothing.
 	 */
 	function imgWithFallback(src, cssClass, glyph) {
 		const root = cssClass.split(' ')[0];
-		return `<img class="${esc(cssClass)}" src="${esc(src)}" alt="" data-img-fallback="${esc(
+		return `<img class="${esc(cssClass)}" src="${esc(src)}" alt="" loading="lazy" decoding="async" data-img-fallback="${esc(
 			glyph
 		)}" data-img-fallback-class="${esc(root)} ${esc(root)}--glyph" />`;
 	}
