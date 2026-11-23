@@ -7164,10 +7164,10 @@ a.daymark-thread__time:hover {
 	cursor: progress;
 }
 
-/* Leave room for WP Apps navigation in a regular browser tab. */
+/* WP Apps supplies the page margin below the masterbar. Match its height
+ * for the sticky header and shell height without adding another offset. */
 body.daymark-app--masterbar {
 	--daymark-masterbar-height: 32px;
-	padding-block-start: var(--daymark-masterbar-height);
 }
 
 @media (max-width: 782px) {
