@@ -147,6 +147,11 @@
 	const MESSAGE_ACTION_DURATION_MS = 8000;
 	const MESSAGE_ERROR_DURATION_MS = 10000;
 	const MESSAGE_BAR_ANCHORS = '.daymark-homefooter, .daymark-bottomnav, .daymark-actionbar, .daymark-postview-footer';
+	// From this size up the tabs are a rail down the side and the column is
+	// wider. Keep it the same as the "Wide screens" media query at the end
+	// of assets/app.css, which does all of the layout: this copy is only
+	// for the one thing CSS can't decide (where the message bar sits).
+	const WIDE_LAYOUT_QUERY = '(min-width: 640px) and (min-height: 500px)';
 	let messageBar = null;
 	let messageState = null;
 	let messageTimer = null;
@@ -366,8 +371,14 @@
 		if (!messageBar || messageBar.hidden) {
 			return;
 		}
+		// The side rail runs the full height of the screen, so sitting
+		// "above" it would put the bar off the top.
+		const railIsShowing = isWideLayout();
 		let offset = 0;
 		document.querySelectorAll(MESSAGE_BAR_ANCHORS).forEach((anchor) => {
+			if (railIsShowing && anchor.closest('.daymark-homefooter')) {
+				return;
+			}
 			const rect = anchor.getBoundingClientRect();
 			if (!rect.height || rect.top >= window.innerHeight || rect.bottom <= 0) {
 				return;
@@ -375,6 +386,10 @@
 			offset = Math.max(offset, window.innerHeight - rect.top);
 		});
 		messageBar.style.setProperty('--daymark-msgbar-offset', Math.round(offset) + 'px');
+	}
+
+	function isWideLayout() {
+		return !!(window.matchMedia && window.matchMedia(WIDE_LAYOUT_QUERY).matches);
 	}
 
 	function scheduleMessageBarPosition() {
@@ -6322,7 +6337,9 @@
 			tab.label
 		)}"${isActive ? ' aria-current="page"' : ''}><span class="daymark-bottomnav__icon">${navIcon(tab.glyph)}${
 			unread ? unread.mark : ''
-		}</span><span class="daymark-visually-hidden">${esc(label)}</span></a>`;
+		}</span><span class="daymark-bottomnav__label" aria-hidden="true">${esc(
+			tab.label
+		)}</span><span class="daymark-visually-hidden">${esc(label)}</span></a>`;
 	}
 
 	// The persistent footer: Timeline/Explore flank one side of the +New

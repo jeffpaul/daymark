@@ -3587,7 +3587,7 @@ test('search: on the Explore tab, a query + type filter narrow the results', asy
 	// Search lives on the Explore tab: one tab, one icon.
 	await page.locator('.daymark-bottomnav__link', { hasText: 'Explore' }).evaluate((el) => el.click());
 	await expect(page).toHaveURL(/#explore$/);
-	await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveText('Explore');
+	await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveAttribute('title', 'Explore');
 	await expect(page.locator('h1', { hasText: 'Explore' })).toBeVisible();
 
 	const list = page.locator('[data-search-results]');
@@ -6143,7 +6143,7 @@ test('Explore, Notifications, and Me are directly linkable and survive a refresh
 	]) {
 		await page.goto(path);
 		await expect(page.locator('h1', { hasText: heading })).toBeVisible();
-		await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveText(heading);
+		await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveAttribute('title', heading);
 
 		await page.reload();
 		await expect(page.locator('h1', { hasText: heading })).toBeVisible();
