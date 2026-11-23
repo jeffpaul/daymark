@@ -229,9 +229,30 @@ wp_enqueue_script( 'daymark-app' );
 	<?php /* Home-screen icon (issue #414): always Daymark's own icon, never the site's Site Icon — a home-screen install is an install of Daymark, not of the site. Square and fully opaque, since iOS drops a transparent one (see apple_touch_icon_url()). Browser-tab favicon still prefers the Site Icon so an open tab matches the site. */ ?>
 	<link rel="apple-touch-icon" sizes="180x180" href="<?php echo esc_url( Daymark_Routes::apple_touch_icon_url() ); ?>" />
 	<link rel="icon" href="<?php echo esc_url( Daymark_Routes::icon_url( 32 ) ); ?>" sizes="32x32" />
-	<?php wp_print_styles( array( 'daymark-featured-content', 'daymark-app' ) ); ?>
+	<?php
+	if ( ! $daymark_chromeless ) {
+		wp_app_enqueue_admin_bar_dependencies();
+		wp_print_styles( array( 'dashicons', 'admin-bar' ) );
+		// Only the framework head hooks: keep theme assets out of the shell.
+		ob_start();
+		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WP Apps framework integration hook.
+		do_action( 'wp_app_head' );
+		$daymark_framework_head = new WP_HTML_Tag_Processor( ob_get_clean() );
+		while ( $daymark_framework_head->next_tag( 'SCRIPT' ) ) {
+			$daymark_framework_head->set_attribute( 'nonce', $daymark_csp_nonce );
+		}
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Trusted framework markup; scripts receive this response's CSP nonce.
+		echo $daymark_framework_head->get_updated_html();
+	}
+	wp_print_styles( array( 'daymark-featured-content', 'daymark-app' ) );
+	?>
 </head>
-<body class="daymark-app daymark-app--<?php echo esc_attr( $daymark_screen ); ?><?php echo $daymark_chromeless ? ' wp-app-chromeless' : ''; ?>">
+<body class="daymark-app daymark-app--<?php echo esc_attr( $daymark_screen ); ?><?php echo $daymark_chromeless ? ' wp-app-chromeless' : ' daymark-app--masterbar'; ?>">
+	<?php
+	if ( ! $daymark_chromeless ) {
+		wp_app_body_open();
+	}
+	?>
 	<div id="daymark-app" class="daymark-shell">
 		<p class="daymark-boot"><?php esc_html_e( 'Loading Daymark…', 'daymark' ); ?></p>
 	</div>
@@ -240,6 +261,9 @@ wp_enqueue_script( 'daymark-app' );
 	</noscript>
 	<?php wp_print_scripts( array( 'daymark-featured-content', 'daymark-app' ) ); ?>
 	<?php
+	if ( ! $daymark_chromeless ) {
+		wp_print_scripts( array( 'admin-bar' ) );
+	}
 	// The launcher enqueues its window bridge before the framework renders.
 	if ( $daymark_chromeless && wp_script_is( 'os-iframe-bridge', 'enqueued' ) ) {
 		wp_print_scripts( array( 'os-iframe-bridge' ) );

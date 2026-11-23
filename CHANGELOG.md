@@ -38,6 +38,8 @@ can't act on them.
 
 ### Fixed
 
+- Daymark now appears in the WP Apps launcher and shows the masterbar when opened in a browser.
+
 - Daymark's page on wordpress.org no longer cuts off its description and its changelog. Both were longer than wordpress.org shows, so the list of outside services stopped partway through and the changelog stopped inside an older release. The details of what your site sends to sites you follow now sit in the FAQ, and the changelog lists the three most recent releases. ([#630](https://github.com/jeffpaul/daymark/pull/630))
 
 ### Developer

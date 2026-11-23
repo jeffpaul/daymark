@@ -6106,7 +6106,12 @@
 			controller.init();
 		}
 
-		document.body.className = 'daymark-app daymark-app--' + target.slice(1);
+		// Keep shell classes (including masterbar spacing and chromeless mode)
+		// when changing screens. Only the active screen class changes.
+		Object.keys(SCREENS).forEach((screen) => {
+			document.body.classList.remove('daymark-app--' + screen.slice(1));
+		});
+		document.body.classList.add('daymark-app', 'daymark-app--' + target.slice(1));
 
 		// An entry Back or Forward returned to (or the current one, shown
 		// again) keeps its stamp; a new one sits one step past the screen

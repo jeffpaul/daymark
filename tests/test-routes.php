@@ -26,6 +26,7 @@ class Test_Routes extends WP_UnitTestCase {
 		$base   = Daymark_Routes::app_base();
 		$router = \WpApp\Registry::get_apps()[ $base ];
 
+		$this->assertTrue( \WpApp\Masterbar::get_instance_for_app( $base )->is_admin_bar_app_link_enabled() );
 		$this->assertSame( 'edit_posts', \WpApp\Registry::get_app_capabilities()[ $base ] );
 		foreach ( array( '', 'notifications', 'explore', 'search', 'me' ) as $path ) {
 			$this->assertSame( 'app-shell.php', $router->get_routes()[ $path ]['template'] );

@@ -10,6 +10,7 @@
 	/* 1 left-to-right, -1 right-to-left: multiply a horizontal offset by
 	   this to mirror it (the launcher fan) without a second set of rules. */
 	--daymark-dir: 1;
+	--daymark-masterbar-height: 0px;
 	--daymark-bg: #ffffff;
 	--daymark-surface: #f8f8f8;
 	--daymark-border: #e0e0e0;
@@ -106,8 +107,8 @@ body.daymark-app {
 
 .daymark-shell {
 	max-width: 480px;
-	min-height: 100vh;
-	min-height: 100dvh;
+	min-height: calc(100vh - var(--daymark-masterbar-height));
+	min-height: calc(100dvh - var(--daymark-masterbar-height));
 	margin: 0 auto;
 	display: flex;
 	flex-direction: column;
@@ -170,7 +171,7 @@ h2[tabindex='-1']:focus {
 /* --- Top bar --- */
 .daymark-topbar {
 	position: sticky;
-	top: 0;
+	top: var(--daymark-masterbar-height);
 	z-index: 5;
 	display: flex;
 	align-items: center;
@@ -7161,4 +7162,16 @@ a.daymark-thread__time:hover {
 .daymark-notif [data-notif-subpost][aria-busy='true'] {
 	opacity: 0.6;
 	cursor: progress;
+}
+
+/* Leave room for WP Apps navigation in a regular browser tab. */
+body.daymark-app--masterbar {
+	--daymark-masterbar-height: 32px;
+	padding-block-start: var(--daymark-masterbar-height);
+}
+
+@media (max-width: 782px) {
+	body.daymark-app--masterbar {
+		--daymark-masterbar-height: 46px;
+	}
 }

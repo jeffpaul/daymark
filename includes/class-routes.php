@@ -60,12 +60,10 @@ class Daymark_Routes {
 				'app_icon'           => DAYMARK_PLUGIN_URL . 'assets/icon-192.png',
 				// The manifest is public; screens require edit_posts per route.
 				'require_login'      => false,
-				'admin_bar_app_link' => false,
+				'admin_bar_app_link' => true,
 			)
 		);
 		$this->app->init();
-		// Daymark has its own navigation and prints only its own assets.
-		$this->app->enable_masterbar( false );
 		foreach ( self::SCREENS as $screen ) {
 			$this->app->route( 'home' === $screen ? '' : $screen, 'app-shell.php', array(), 'edit_posts' );
 		}
