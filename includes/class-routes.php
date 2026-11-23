@@ -67,6 +67,11 @@ class Daymark_Routes {
 		foreach ( self::SCREENS as $screen ) {
 			$this->app->route( 'home' === $screen ? '' : $screen, 'app-shell.php', array(), 'edit_posts' );
 		}
+		$this->app->add_menu_item( 'timeline', __( 'Timeline', 'daymark' ), self::app_url() );
+		$this->app->add_menu_item( 'explore', __( 'Explore', 'daymark' ), self::app_url( 'explore' ) );
+		$this->app->add_menu_item( 'notifications', __( 'Notifications', 'daymark' ), self::app_url( 'notifications' ) );
+		$this->app->add_menu_item( 'me', __( 'Me', 'daymark' ), self::app_url( 'me' ) );
+		$this->app->add_menu_item( 'create', __( 'New Mark', 'daymark' ), self::app_url() . '#create' );
 
 		foreach ( array(
 			'manifest'    => 'app-manifest.php',
