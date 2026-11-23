@@ -36,7 +36,7 @@ class Daymark_Routes {
 	private const SCREENS = array( 'home', 'notifications', 'explore', 'search', 'me' );
 
 	/**
-	 * Shared WP App instance. Daymark retains its own offline and push worker.
+	 * Shared WP App instance, including its offline shell and extensible worker.
 	 *
 	 * @var \WpApp\WpApp|null
 	 */
@@ -81,6 +81,113 @@ class Daymark_Routes {
 		// Launchers advertise the app to authors; the manifest stays public.
 		\WpApp\Registry::register_app_capability( self::app_base(), 'edit_posts' );
 		add_filter( 'redirect_canonical', array( $this, 'skip_canonical_for_app_assets' ) );
+		add_action( 'template_redirect', array( $this, 'register_offline_shell' ), 1 );
+	}
+
+	/** Configure the framework fallback after authentication and connector registration. */
+	public function register_offline_shell(): void {
+		if ( ! $this->is_app_request() || ! current_user_can( 'edit_posts' ) || ! in_array( $this->request_path(), array_merge( array( '', 'offline', 'worker' ), self::SCREENS ), true ) ) {
+			return;
+		}
+		$this->app->enable_pwa(
+			array(
+				'name'                => 'Daymark',
+				'cache_policy'        => 'shell',
+				'offline_url'         => self::app_url( 'offline' ),
+				'head_tags'           => false,
+				'service_worker_path' => 'worker',
+				'cache_prefix'        => 'wp-app-' . self::app_base() . '-',
+				'cache_name'          => 'wp-app-' . self::app_base() . '-' . self::service_worker_cache_version(),
+				'cache_message_type'  => 'daymark-refresh-offline-shell',
+				'precache'            => self::offline_asset_urls(),
+				'worker_scripts'      => array( DAYMARK_PLUGIN_DIR . 'assets/push-worker.js' ),
+				'worker_data'         => array( 'restUrl' => esc_url_raw( rest_url( 'daymark/v1/' ) ) ),
+				'offline_shell'       => array(
+					'content'       => DAYMARK_PLUGIN_DIR . 'templates/offline-content.php',
+					'body_class'    => 'daymark-app daymark-app--home',
+					'capability'    => 'edit_posts',
+					'bootstrap_url' => self::app_url( 'config' ),
+					'offline_data'  => self::build_offline_config(),
+					'csp'           => self::offline_content_security_policy(),
+				),
+			)
+		);
+		// Only the fallback uses these assets; the live shell keeps its integrations.
+		if ( 'offline' !== $this->request_path() ) {
+			return;
+		}
+		$scope = self::app_base();
+		foreach ( array( 'app', 'featured-content' ) as $asset ) {
+			wp_app_enqueue_style( 'daymark-offline-' . $asset, DAYMARK_PLUGIN_URL . 'assets/' . $asset . '.css', array(), DAYMARK_VERSION, $scope );
+		}
+		foreach ( self::offline_core_script_urls() as $index => $url ) {
+			wp_app_enqueue_script( 'daymark-offline-core-' . $index, $url, array(), null, true, $scope );
+		}
+		foreach ( array( 'featured-content', 'note-length', 'offline-boot' ) as $asset ) {
+			wp_app_enqueue_script( 'daymark-offline-' . $asset, DAYMARK_PLUGIN_URL . 'assets/' . $asset . '.js', array(), DAYMARK_VERSION, true, $scope );
+		}
+		add_action( wp_app_get_scoped_hook_name( 'wp_app_head_meta', $scope ), array( __CLASS__, 'offline_head_meta' ) );
+	}
+
+	/** Exact URLs used by the live and fallback documents; wp-app adds its runtime. */
+	public static function offline_asset_urls(): array {
+		$urls = array( DAYMARK_PLUGIN_URL . 'assets/app.js' );
+		foreach ( array( 'app.css', 'app.js', 'offline-boot.js', 'featured-content.css', 'featured-content.js', 'note-length.js' ) as $file ) {
+			$urls[] = add_query_arg( 'ver', DAYMARK_VERSION, DAYMARK_PLUGIN_URL . 'assets/' . $file );
+		}
+		return array_merge( $urls, self::offline_core_script_urls() );
+	}
+
+	/** Safe, deliberately selected preferences; newly added live fields stay out. */
+	public static function build_offline_config(): array {
+		$live                = self::build_app_config();
+		$keys                = array(
+			'restUrl',
+			'assetsUrl',
+			'appUrl',
+			'siteUrl',
+			'siteTitle',
+			'dateFormat',
+			'dateNames',
+			'siteIconUrl',
+			'daymarkIconUrl',
+			'screen',
+			'connectors',
+			'defaults',
+			'siteDefaults',
+			'categories',
+			'categoryDefaults',
+			'siteCategoryDefaults',
+			'titlePolicy',
+			'defaultCategory',
+			'heicUploads',
+			'uploadExtensions',
+			'imageEdit',
+			'noteLength',
+			'compactTimeline',
+			'capture',
+			'appFont',
+			'canPublish',
+			'searchFirstYear',
+			'timelineLastSeen',
+			'timelinePosition',
+			'interactionHintsSeen',
+		);
+		$data                = array_intersect_key( $live, array_flip( $keys ) );
+		$data['userId']      = (int) get_current_user_id();
+		$data['currentUser'] = array_intersect_key( $live['currentUser'], array_flip( array( 'id', 'displayName', 'avatarUrl', 'profileEditUrl' ) ) );
+		$data['localeData']  = self::app_locale_data();
+		return $data;
+	}
+
+	/** Policy for the cacheable framework document. */
+	public static function offline_content_security_policy(): string {
+		return "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' https: blob:; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
+	}
+
+	/** Cached metadata shared by the framework fallback and installed app. */
+	public static function offline_head_meta(): void {
+		require DAYMARK_PLUGIN_DIR . 'templates/offline-head.php';
 	}
 
 	/**
@@ -528,11 +635,16 @@ class Daymark_Routes {
 	 *                                   (an English site, for example).
 	 */
 	public static function app_locale_data(): ?array {
-		if ( ! wp_script_is( 'daymark-app', 'registered' ) ) {
+		$was_registered = wp_script_is( 'daymark-app', 'registered' );
+		if ( ! $was_registered ) {
 			wp_register_script( 'daymark-app', DAYMARK_PLUGIN_URL . 'assets/app.js', array( 'wp-i18n' ), DAYMARK_VERSION, true );
 		}
 
 		$json = load_script_textdomain( 'daymark-app', 'daymark' );
+		if ( ! $was_registered ) {
+			// Preparing fallback data must not replace the live shell's dependencies.
+			wp_deregister_script( 'daymark-app' );
+		}
 
 		if ( ! is_string( $json ) || '' === $json ) {
 			return null;
@@ -557,10 +669,8 @@ class Daymark_Routes {
 	 * The worker only re-installs (and so only re-downloads app.js, app.css,
 	 * offline-boot.js, the Featured Content slider's two files, and the Note
 	 * length count's note-length.js into a fresh cache) when the bytes of
-	 * /daymark/worker change, and it serves those files cache-first, ignoring
-	 * their `?ver=` query. A fixed cache name therefore meant an installed Daymark
-	 * kept the JavaScript it had on install day through every later release,
-	 * including any that fixed a client-side bug. The plugin version covers a
+	 * /daymark/worker change. wp-app serves exact URLs network-first and uses
+	 * the precached copy offline. The plugin version covers a
 	 * normal release; the assets' modification times also cover a development
 	 * checkout, where the version constant does not move.
 	 *
@@ -577,26 +687,11 @@ class Daymark_Routes {
 		// The worker also caches core's wp-hooks and wp-i18n, so a core
 		// update has to give it a fresh cache as well.
 		$signature .= '|' . get_bloginfo( 'version' );
+		foreach ( array( 'offline-content.php', 'offline-head.php' ) as $file ) {
+			$signature .= '|' . filemtime( DAYMARK_PLUGIN_DIR . 'templates/' . $file );
+		}
 
 		return DAYMARK_VERSION . '-' . substr( md5( $signature ), 0, 8 );
-	}
-
-	/**
-	 * The service worker script served at /daymark/worker: assets/daymark-sw.js
-	 * with its placeholders filled in: the plugin assets URL, the cache
-	 * version above, and the core script URLs the offline shell loads.
-	 *
-	 * @return string
-	 */
-	public static function build_service_worker_script(): string {
-		$sw_path = DAYMARK_PLUGIN_DIR . 'assets/daymark-sw.js';
-		$sw_js   = is_readable( $sw_path ) ? (string) file_get_contents( $sw_path ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading this plugin's own bundled static JS file off disk, not a remote fetch.
-
-		return str_replace(
-			array( '__DAYMARK_ASSETS_URL__', '__DAYMARK_CACHE_VERSION__', '"__DAYMARK_CORE_SCRIPTS__"', '__DAYMARK_REST_URL__' ),
-			array( DAYMARK_PLUGIN_URL . 'assets/', self::service_worker_cache_version(), (string) wp_json_encode( self::offline_core_script_urls(), JSON_UNESCAPED_SLASHES ), esc_url_raw( rest_url( 'daymark/v1/' ) ) ),
-			$sw_js
-		);
 	}
 
 	/**
@@ -670,9 +765,8 @@ class Daymark_Routes {
 	 * Always includes a fresh REST nonce — this method is only ever called
 	 * for a live, per-request, already-authenticated response (the inline
 	 * script, or a live config fetch); nothing here writes to durable
-	 * storage. It's the service worker's own job (assets/daymark-sw.js) to
-	 * strip the nonce back out before persisting a copy to Cache Storage for
-	 * offline reuse — see that file's own docblock.
+	 * storage. The framework fallback embeds only build_offline_config()'s
+	 * explicitly selected safe fields. Live config is never cached.
 	 *
 	 * @param string $screen             Current app screen ('home', 'notifications', etc.).
 	 * @param string $pending_type       One-shot composer type hint, or ''.
@@ -792,6 +886,7 @@ class Daymark_Routes {
 		);
 
 		return array(
+			'userId'                 => (int) $user->ID,
 			'restUrl'                => esc_url_raw( rest_url( 'daymark/v1/' ) ),
 			'assetsUrl'              => esc_url_raw( DAYMARK_PLUGIN_URL . 'assets/' ),
 			// Trailing-slash directory URL for the app's own base

@@ -7,14 +7,20 @@ every release. Checked at each release (see CONTRIBUTING.md, "Releasing").
 |---------|---------|-----------|--------------------|-------|
 | `phpunit/phpunit` (dev) | 9.6 | 13.x | WordPress's own PHPUnit test library (`wp-phpunit`, used through `bin/install-wp-tests.sh` and `yoast/phpunit-polyfills`) supports PHPUnit up to 9.x. A newer major would break the whole test suite until WordPress core supports it. | 0.19.0 |
 
-Daymark bundles `akirk/wp-app` (^2.2) without namespace prefixing so WP Apps
+Daymark bundles the wp-app 2.3 development work from [wp-app #74](https://github.com/akirk/wp-app/pull/74), pinned to commit `8f6eacf3945f480f02ac2f7ebed43f9aa0d20af3`, without namespace prefixing so WP Apps
 share the framework registry and launcher integration across plugins. Its
 separate manifest and lockfile live in `lib/framework/`; run
 `bash bin/build-framework.sh` to install `lib/framework/packages/`. Only the
 manifest and lockfile are committed; generated dependencies are ignored.
 Root `composer install` also installs the runtime. `bin/build-dist.sh` installs
-the locked runtime in a temporary directory and includes it in the release ZIP. Daymark keeps its existing
-PWA, offline cache, and push worker rather than enabling the framework PWA.
+the locked runtime in a temporary directory and includes it in the release ZIP. Replace the development pin with a released 2.3 constraint once available.
+
+wp-app owns the offline document, safe bootstrap, exact asset precaching, and
+navigation fallback. Daymark adds push handlers through `worker_scripts` and
+passes its REST URL through `worker_data`. Its extension preserves device push
+tokens when retiring old Daymark caches and clears the current shell and token
+at logout. Existing IndexedDB storage, uploads, and publishing queues remain
+Daymark-owned.
 
 Daymark registers screens and extensionless endpoints within one WpApp
 namespace. Screen routes require `edit_posts`; the manifest is public, and

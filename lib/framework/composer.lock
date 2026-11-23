@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "454a8fb450b2a0251c36e5d3df8fa348",
+    "content-hash": "1fd2fcbed7ded02c8b0155c4a26acaaa",
     "packages": [
         {
             "name": "akirk/wp-app",
-            "version": "v2.2.0",
+            "version": "dev-memex-offline-framework",
             "source": {
                 "type": "git",
                 "url": "https://github.com/akirk/wp-app.git",
-                "reference": "57d16f0160f971ac0d2c6420f4f28a40b060fce5"
+                "reference": "8f6eacf3945f480f02ac2f7ebed43f9aa0d20af3"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/akirk/wp-app/zipball/57d16f0160f971ac0d2c6420f4f28a40b060fce5",
-                "reference": "57d16f0160f971ac0d2c6420f4f28a40b060fce5",
+                "url": "https://api.github.com/repos/akirk/wp-app/zipball/8f6eacf3945f480f02ac2f7ebed43f9aa0d20af3",
+                "reference": "8f6eacf3945f480f02ac2f7ebed43f9aa0d20af3",
                 "shasum": ""
             },
             "require": {
@@ -47,7 +47,25 @@
                     "src/rest/class-access.php"
                 ]
             },
-            "notification-url": "https://packagist.org/downloads/",
+            "autoload-dev": {
+                "psr-4": {
+                    "WpApp\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "phpunit"
+                ],
+                "test:autoload": [
+                    "php -d opcache.enable=1 -d opcache.enable_cli=1 -r 'require \"vendor/autoload.php\"; require \"vendor/autoload.php\"; echo \"autoload ok\\n\";'"
+                ],
+                "phpcs": [
+                    "phpcs"
+                ],
+                "phpcbf": [
+                    "phpcbf"
+                ]
+            },
             "license": [
                 "GPL-2.0-or-later"
             ],
@@ -58,16 +76,25 @@
             ],
             "description": "A framework to build frontend apps on WordPress with routing, admin bar integration, and theme isolation",
             "support": {
-                "issues": "https://github.com/akirk/wp-app/issues",
-                "source": "https://github.com/akirk/wp-app/tree/v2.2.0"
+                "source": "https://github.com/akirk/wp-app/tree/memex-offline-framework",
+                "issues": "https://github.com/akirk/wp-app/issues"
             },
-            "time": "2026-11-19T21:46:45+00:00"
+            "time": "2026-11-23T16:10:06+00:00"
         }
     ],
     "packages-dev": [],
-    "aliases": [],
+    "aliases": [
+        {
+            "package": "akirk/wp-app",
+            "version": "dev-memex-offline-framework",
+            "alias": "2.3.0",
+            "alias_normalized": "2.3.0.0"
+        }
+    ],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "akirk/wp-app": 20
+    },
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {},

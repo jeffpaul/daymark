@@ -27,6 +27,32 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 		wp_set_current_user( $this->author_id );
 	}
 
+	/** Render through the same framework configuration and scoped hooks as HTTP. */
+	private function render_offline_shell(): string {
+		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );
+		$this->go_to( '/' );
+		set_query_var( 'wp_app_path', Daymark_Routes::app_base() );
+		set_query_var( 'wp_app_request', 'offline' );
+		$GLOBALS['wp_app_route'] = array(
+			'app_path' => Daymark_Routes::app_base(),
+			'pattern'  => 'offline',
+		);
+		$routes                  = new Daymark_Routes();
+		$routes->register_app();
+		$routes->register_offline_shell();
+		ob_start();
+		include DAYMARK_PLUGIN_DIR . 'templates/offline-shell.php';
+		return (string) ob_get_clean();
+	}
+
+	/** Read the actual framework-generated worker endpoint. */
+	private function worker_script(): string {
+		$this->render_offline_shell();
+		ob_start();
+		\WpApp\Pwa::maybe_handle_app_request( Daymark_Routes::app_base(), 'worker' );
+		return (string) ob_get_clean();
+	}
+
 	/** build_app_config() always includes a fresh, real nonce — the live path's own contract, unchanged from the inline-script era. */
 	public function test_build_app_config_includes_a_live_nonce() {
 		$config = Daymark_Routes::build_app_config();
@@ -100,12 +126,12 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 
 	/** All placeholders in the served worker are filled, so no literal token reaches a browser. */
 	public function test_served_service_worker_has_no_unfilled_placeholders() {
-		$script = Daymark_Routes::build_service_worker_script();
+		$script = $this->worker_script();
 
 		$this->assertNotSame( '', $script );
 		$this->assertStringNotContainsString( '__DAYMARK_', $script );
-		$this->assertStringContainsString( DAYMARK_PLUGIN_URL . 'assets/', $script );
-		$this->assertStringContainsString( esc_url_raw( rest_url( 'daymark/v1/' ) ), $script );
+		$this->assertStringContainsString( str_replace( '/', '\\/', DAYMARK_PLUGIN_URL . 'assets/' ), $script );
+		$this->assertStringContainsString( str_replace( '/', '\\/', esc_url_raw( rest_url( 'daymark/v1/' ) ) ), $script );
 	}
 
 	/**
@@ -118,32 +144,27 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 		$version = Daymark_Routes::service_worker_cache_version();
 
 		$this->assertMatchesRegularExpression( '/^' . preg_quote( DAYMARK_VERSION, '/' ) . '-[0-9a-f]{8}$/', $version );
-		$this->assertStringContainsString( "const CACHE_NAME = 'daymark-{$version}';", Daymark_Routes::build_service_worker_script() );
+		$this->assertStringContainsString( 'wp-app-' . Daymark_Routes::app_base() . '-' . $version, $this->worker_script() );
 		$this->assertSame( $version, Daymark_Routes::service_worker_cache_version(), 'Stable across calls when nothing changed' );
 	}
 
-	/**
-	 * The worker's redaction drops every WordPress nonce before writing
-	 * config to Cache Storage: the app nonce, and the one inside the
-	 * Log out URL (`_wpnonce`), which wp_logout_url() builds.
-	 */
-	public function test_service_worker_redacts_the_logout_url_nonce_too() {
-		$config = Daymark_Routes::build_app_config();
-
-		$this->assertMatchesRegularExpression( '/_wpnonce=/', (string) $config['currentUser']['logoutUrl'], 'Precondition: the logout URL carries a nonce' );
-
-		$script = Daymark_Routes::build_service_worker_script();
-
-		$this->assertStringContainsString( 'delete data.nonce;', $script );
-		$this->assertStringContainsString( 'delete data.currentUser.logoutUrl;', $script );
+	/** Offline data is selected explicitly and live credentials never enter the cache. */
+	public function test_offline_data_excludes_credentials() {
+		$config = Daymark_Routes::build_offline_config();
+		$this->assertSame( $this->author_id, $config['userId'] );
+		$this->assertSame( $this->author_id, $config['currentUser']['id'] );
+		$this->assertArrayNotHasKey( 'logoutUrl', $config['currentUser'] );
+		$this->assertArrayNotHasKey( 'nonce', $config );
+		$this->assertArrayNotHasKey( 'pendingDraftId', $config );
+		$this->assertArrayHasKey( 'localeData', $config );
+		$script = $this->worker_script();
+		$this->assertStringNotContainsString( 'redactAndCacheConfig', $script );
+		$this->assertStringNotContainsString( "scopePath + 'config'", $script );
 	}
 
 	/** The offline-fallback shell renders with no per-request nonce anywhere, and no inline <script> at all. */
 	public function test_offline_shell_has_no_nonce_or_inline_script() {
-		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );
-		ob_start();
-		include DAYMARK_PLUGIN_DIR . 'templates/offline-shell.php';
-		$html = (string) ob_get_clean();
+		$html = $this->render_offline_shell();
 
 		$this->assertStringNotContainsString( 'nonce=', $html, 'The offline shell must never carry a per-request nonce' );
 		$this->assertDoesNotMatchRegularExpression( '/<script(?![^>]*\bsrc=)[^>]*>/', $html, 'Every script must be external (src=), never inline' );
@@ -151,10 +172,7 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 
 	/** The offline shell's own CSP (meta tag, since it may be replayed from Cache Storage well after being generated) allows only 'self' scripts — no nonce, no unsafe-inline. */
 	public function test_offline_shell_csp_has_no_nonce_or_unsafe_inline() {
-		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );
-		ob_start();
-		include DAYMARK_PLUGIN_DIR . 'templates/offline-shell.php';
-		$html = (string) ob_get_clean();
+		$html = $this->render_offline_shell();
 
 		preg_match( '/<meta http-equiv="Content-Security-Policy" content="([^"]*)"/', $html, $matches );
 		$this->assertNotEmpty( $matches, 'A CSP meta tag must be present' );
@@ -169,16 +187,21 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( 'unsafe-inline', $script_src_matches[0] ?? '', 'script-src specifically must never fall back to unsafe-inline' );
 	}
 
-	/** offline-boot.js is wired up with the two data attributes it reads via document.currentScript. */
+	/** The entry adapter uses the framework bootstrap and its extensible worker. */
 	public function test_offline_shell_wires_up_offline_boot_script() {
-		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );
-		ob_start();
-		include DAYMARK_PLUGIN_DIR . 'templates/offline-shell.php';
-		$html = (string) ob_get_clean();
+		$html = $this->render_offline_shell();
 
 		$this->assertStringContainsString( 'offline-boot.js', $html );
-		$this->assertStringContainsString( 'data-config-url="' . esc_url( Daymark_Routes::app_url( 'config' ) ), $html );
-		$this->assertStringContainsString( 'data-app-js-url="' . esc_url( DAYMARK_PLUGIN_URL . 'assets/app.js' ), $html );
+		preg_match( '/data-wp-app-bootstrap="([^"]*)"/', $html, $matches );
+		$this->assertNotEmpty( $matches );
+		$bootstrap = json_decode( html_entity_decode( $matches[1], ENT_QUOTES ), true );
+		$this->assertSame( Daymark_Routes::app_url( 'config' ), $bootstrap['url'] );
+		$this->assertSame( $this->author_id, $bootstrap['offline']['userId'] );
+		$this->assertSame( Daymark_Routes::app_url( 'worker' ), $bootstrap['worker']['url'] );
+		$this->assertSame( 'daymark-refresh-offline-shell', $bootstrap['worker']['cacheMessageType'] );
+		$this->assertStringContainsString( "self.addEventListener('push'", $this->worker_script() );
+		$this->assertStringContainsString( 'offline/client.js', $html );
+		$this->assertStringContainsString( 'offline\\/client.js', $this->worker_script() );
 	}
 
 	/**
@@ -187,19 +210,16 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 	 * gallery is a slider offline too, not stacked photos.
 	 */
 	public function test_offline_shell_loads_and_worker_caches_the_gallery_slider() {
-		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );
-		ob_start();
-		include DAYMARK_PLUGIN_DIR . 'templates/offline-shell.php';
-		$html = (string) ob_get_clean();
+		$html = $this->render_offline_shell();
 
 		$this->assertStringContainsString( 'assets/featured-content.js', $html );
 		$this->assertStringContainsString( 'assets/featured-content.css', $html );
-		$this->assertLessThan( strpos( $html, 'offline-boot.js' ), strpos( $html, 'featured-content.js' ), 'The slider loads before app.js is injected' );
+		$this->assertLessThan( strpos( $html, 'id="daymark-offline-offline-boot-js"' ), strpos( $html, 'featured-content.js' ), 'The slider loads before app.js is injected' );
 
-		$script = Daymark_Routes::build_service_worker_script();
+		$script = $this->worker_script();
 
-		$this->assertStringContainsString( "ASSETS_BASE_URL + 'featured-content.js'", $script );
-		$this->assertStringContainsString( "ASSETS_BASE_URL + 'featured-content.css'", $script );
+		$this->assertStringContainsString( 'assets\\/featured-content.js', $script );
+		$this->assertStringContainsString( 'assets\\/featured-content.css', $script );
 	}
 
 	/**
@@ -208,27 +228,33 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 	 * offline still shows its count.
 	 */
 	public function test_offline_shell_loads_and_worker_caches_the_note_length_count() {
-		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );
-		ob_start();
-		include DAYMARK_PLUGIN_DIR . 'templates/offline-shell.php';
-		$html = (string) ob_get_clean();
+		$html = $this->render_offline_shell();
 
 		$this->assertStringContainsString( 'assets/note-length.js', $html );
-		$this->assertLessThan( strpos( $html, 'offline-boot.js' ), strpos( $html, 'note-length.js' ), 'The count loads before app.js is injected' );
+		$this->assertLessThan( strpos( $html, 'id="daymark-offline-offline-boot-js"' ), strpos( $html, 'note-length.js' ), 'The count loads before app.js is injected' );
 
-		$script = Daymark_Routes::build_service_worker_script();
+		$script = $this->worker_script();
 
-		$this->assertStringContainsString( "ASSETS_BASE_URL + 'note-length.js'", $script );
-		$this->assertStringContainsString( "'note-length.js',", $script, 'Served from the cache like the other static assets' );
+		$this->assertStringContainsString( 'assets\\/note-length.js', $script );
+		$this->assertContains( DAYMARK_PLUGIN_URL . 'assets/note-length.js?ver=' . DAYMARK_VERSION, \WpApp\Pwa::get_config( Daymark_Routes::app_base() )['precache'] );
 	}
 
 	/** The offline shell's own body/container markup matches the real app shell's, so app.js renders into the same structure either way. */
 	public function test_offline_shell_matches_real_shell_container_markup() {
-		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );
-		ob_start();
-		include DAYMARK_PLUGIN_DIR . 'templates/offline-shell.php';
-		$html = (string) ob_get_clean();
+		$html = $this->render_offline_shell();
 
 		$this->assertStringContainsString( '<div id="daymark-app" class="daymark-shell">', $html );
+	}
+	/** Every declared document asset must match an exact shell precache URL. */
+	public function test_rendered_offline_assets_match_the_framework_precache() {
+		$html   = $this->render_offline_shell();
+		$cached = \WpApp\Pwa::get_config( Daymark_Routes::app_base() )['precache'];
+		preg_match_all( '/<(?:script|link)[^>]+(?:src|href)="([^"]+)"/', $html, $matches );
+		foreach ( $matches[1] as $url ) {
+			$url = html_entity_decode( $url, ENT_QUOTES );
+			if ( preg_match( '/\.(js|css)(\?|$)/', $url ) ) {
+				$this->assertContains( $url, $cached, 'Exact offline asset URL must be precached: ' . $url );
+			}
+		}
 	}
 }

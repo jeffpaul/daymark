@@ -177,13 +177,23 @@ class Test_I18n extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'i18n', $urls[1] );
 
 		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );
+		$this->go_to( '/' );
+		set_query_var( 'wp_app_path', Daymark_Routes::app_base() );
+		set_query_var( 'wp_app_request', 'offline' );
+		$GLOBALS['wp_app_route'] = array(
+			'app_path' => Daymark_Routes::app_base(),
+			'pattern'  => 'offline',
+		);
+		$routes                  = new Daymark_Routes();
+		$routes->register_app();
+		$routes->register_offline_shell();
 		ob_start();
 		include DAYMARK_PLUGIN_DIR . 'templates/offline-shell.php';
 		$html = (string) ob_get_clean();
 
 		$hooks = strpos( $html, esc_url( $urls[0] ) );
 		$i18n  = strpos( $html, esc_url( $urls[1] ) );
-		$boot  = strpos( $html, 'offline-boot.js' );
+		$boot  = strpos( $html, 'id="daymark-offline-offline-boot-js"' );
 
 		$this->assertNotFalse( $hooks );
 		$this->assertNotFalse( $i18n );
@@ -191,15 +201,23 @@ class Test_I18n extends WP_UnitTestCase {
 		$this->assertLessThan( $boot, $i18n, 'wp-i18n loads before the boot script' );
 		$this->assertStringNotContainsString( 'setLocaleData', $html, 'No inline translation script, which this page\'s CSP would block' );
 
-		$script = Daymark_Routes::build_service_worker_script();
+		$precache = \WpApp\Pwa::get_config( Daymark_Routes::app_base() )['precache'];
+		foreach ( $urls as $url ) {
+			$this->assertContains( $url, $precache );
+		}
+	}
 
-		$this->assertStringContainsString( 'const CORE_SCRIPTS = ' . wp_json_encode( $urls, JSON_UNESCAPED_SLASHES ) . ';', $script );
+	/** Preparing translations for the cached shell must not register the live entry point. */
+	public function test_offline_locale_loading_preserves_live_script_registration() {
+		wp_deregister_script( 'daymark-app' );
+		Daymark_Routes::app_locale_data();
+		$this->assertFalse( wp_script_is( 'daymark-app', 'registered' ) );
 	}
 
 	/** offline-boot.js hands config's translations to wp.i18n before app.js runs. */
 	public function test_offline_boot_sets_locale_data() {
 		$js = (string) file_get_contents( DAYMARK_PLUGIN_DIR . 'assets/offline-boot.js' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading the plugin's own source.
 
-		$this->assertStringContainsString( "wp.i18n.setLocaleData(configData.localeData, 'daymark')", $js );
+		$this->assertStringContainsString( "wp.i18n.setLocaleData(config.localeData, 'daymark')", $js );
 	}
 }
