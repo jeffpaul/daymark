@@ -1040,7 +1040,8 @@
 	 * Every card picture and site icon comes through here, so they are all
 	 * lazy: a page of the Timeline is twenty cards, and only the ones near
 	 * the screen should fetch their picture. Each slot has its size set in
-	 * CSS, so a picture arriving later moves nothing.
+	 * CSS, so a picture arriving later moves nothing. How near is "near" is
+	 * set by watchLazyPictures() below, not left to the browser.
 	 */
 	function imgWithFallback(src, cssClass, glyph) {
 		const root = cssClass.split(' ')[0];
@@ -1480,6 +1481,18 @@
 	// earlier page on the server, so fewer, larger pages mean fewer
 	// requests and less repeated work while scrolling.
 	const RECENT_PER_PAGE = 20;
+
+	// How far ahead of the scroll the app fetches, counted in screens so it
+	// means the same on a phone and a laptop. Both are well ahead on
+	// purpose: a card or picture that only starts loading as it reaches the
+	// screen arrives late, and a fast scroll then looks jerky.
+	//
+	// The next page of the Timeline or of Search is asked for when the end
+	// of the list is still two screens below (rootMargin: bottom only).
+	const NEXT_PAGE_LOOKAHEAD = '0px 0px 200% 0px';
+	// A lazy picture starts loading three screens above or below the screen
+	// (see watchLazyPictures()).
+	const PICTURE_LOOKAHEAD = '300% 0px';
 
 	// Search's page size, also used for its infinite scroll.
 	const SEARCH_PER_PAGE = 20;
@@ -10260,7 +10273,7 @@
 						}
 					}
 				},
-				{ rootMargin: '200px' }
+				{ rootMargin: NEXT_PAGE_LOOKAHEAD }
 			);
 			this.observer.observe(sentinel);
 		},
@@ -12087,7 +12100,7 @@
 						this.loadMoreResults();
 					}
 				},
-				{ rootMargin: '200px' }
+				{ rootMargin: NEXT_PAGE_LOOKAHEAD }
 			);
 			this._searchObserver.observe(sentinel);
 		},
@@ -22420,6 +22433,53 @@
 		},
 		true
 	);
+
+	// Every lazy picture in the app (`loading="lazy"`: card pictures from
+	// imgWithFallback(), pictures inside an opened post, avatars) is started
+	// by the app itself once it is within PICTURE_LOOKAHEAD of the screen.
+	// Left to the browser, how near "near" is varies a great deal, and some
+	// wait until the picture is almost on screen, so it pops in late while
+	// you scroll. Switching a waiting picture to `loading="eager"` makes the
+	// browser fetch it at once, and it is still lazy for everything further
+	// away, so a long Timeline doesn't fetch every picture on it.
+	//
+	// One observer for the whole app, fed by a MutationObserver, because
+	// screens draw their markup as strings in many places. A picture in a
+	// strip that scrolls sideways (Look back, People) stays with the
+	// browser's own timing until it is scrolled to. Without either
+	// observer, pictures simply stay lazy.
+	function watchLazyPictures() {
+		if (!('IntersectionObserver' in window) || !('MutationObserver' in window)) {
+			return;
+		}
+		const ahead = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (entry.isIntersecting) {
+						ahead.unobserve(entry.target);
+						entry.target.loading = 'eager';
+					}
+				}
+			},
+			{ rootMargin: PICTURE_LOOKAHEAD }
+		);
+		const watch = (node) => {
+			if (!(node instanceof Element)) {
+				return;
+			}
+			if (node.matches('img[loading="lazy"]')) {
+				ahead.observe(node);
+			}
+			node.querySelectorAll('img[loading="lazy"]').forEach((img) => ahead.observe(img));
+		};
+		new MutationObserver((records) => {
+			for (const record of records) {
+				record.addedNodes.forEach(watch);
+			}
+		}).observe(document.body, { childList: true, subtree: true });
+		watch(document.body);
+	}
+	watchLazyPictures();
 
 	// Explore/Search/Me are real server routes (Daymark_Routes), same as
 	// notifications already was — a direct load or refresh at

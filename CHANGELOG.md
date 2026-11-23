@@ -31,7 +31,7 @@ can't act on them.
 - Settings -> Daymark -> General now has one "Save changes" button at the bottom, in place of a Save button in each of its eight sections. One press saves everything on the page, so a change in one section is no longer lost by pressing Save in another. ([#635](https://github.com/jeffpaul/daymark/pull/635))
 - The font setting in Settings -> Daymark -> General now lists every font in your site's Font Library, both the ones you added and the ones your theme brings. Pick one and the Daymark app shows its text in it. ([#638](https://github.com/jeffpaul/daymark/pull/638))
 - On Explore, Look back now sits just above the People row, so your own memories are the first thing under the search box (and under your recent searches, when you have any) without scrolling past People and Your tags. ([#637](https://github.com/jeffpaul/daymark/pull/637))
-- Pictures on Timeline, Search and Bookmarks cards, and pictures inside a post you open, now load as you scroll toward them instead of all at once, so a long feed opens faster and uses less mobile data. ([#644](https://github.com/jeffpaul/daymark/pull/644))
+- Pictures on Timeline, Search and Bookmarks cards, and pictures inside a post you open, now load as you scroll toward them instead of all at once, so a long feed opens faster and uses less mobile data. They start loading about three screens ahead of where you are, and the next page of the Timeline is fetched before you reach the end, so scrolling stays smooth. ([#644](https://github.com/jeffpaul/daymark/pull/644))
 
 ### Removed
 
