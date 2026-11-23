@@ -184,6 +184,12 @@ To follow many sites at once, import an OPML file from your feed reader on the I
 
 You can also follow a site while you're reading it: click the Daymark bookmarklet (see "Can I Reblog or Like a post I'm reading on another site?" below) and tap Follow. If the site has a "Follow me with Daymark" block, type your own site's address into it: your Daymark opens with that site filled in, ready to follow.
 
+= Can an AI agent use Daymark for me? =
+
+Yes, if you connect one. Daymark offers four things through WordPress's Abilities API: post a Mark, read your Timeline, see who responded to your Marks, and follow a site. An agent reaches them with a sign-in you give it (an application password, or the MCP Adapter plugin), acts as you, and can do no more than you can in the app. A Mark it writes is saved as a draft unless you ask it to publish. It can't like, comment, reblog or delete, and reading your notifications doesn't mark them as seen.
+
+Reading your Timeline hands your friends' posts, and the names of people who responded to you, to whichever AI service runs your agent. Daymark itself sends nothing to any AI service for this.
+
 = Can visitors follow my site from their own Daymark? =
 
 Yes. Add the "Follow me with Daymark" block to a page, a sidebar, or your site's footer. A visitor who uses Daymark types their own site's address and taps Follow, and their own Daymark opens with your site filled in. Nothing is followed until they confirm there. The block sends nothing anywhere itself: the visitor's browser simply goes to their own site. It also shows your feed's address, for anyone using another feed reader, and in your feed it shows only that address.
