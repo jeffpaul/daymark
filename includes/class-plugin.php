@@ -253,6 +253,13 @@ final class Daymark_Plugin {
 	public Daymark_Follow_Link $follow_link;
 
 	/**
+	 * What an AI agent can do with Daymark, through the Abilities API.
+	 *
+	 * @var Daymark_Abilities
+	 */
+	public Daymark_Abilities $abilities;
+
+	/**
 	 * Subscription source registry (inbound mirror of the syndication
 	 * registry).
 	 *
@@ -444,6 +451,7 @@ final class Daymark_Plugin {
 		$this->push                         = new Daymark_Push();
 		$this->followers                    = new Daymark_Followers();
 		$this->follow_link                  = new Daymark_Follow_Link();
+		$this->abilities                    = new Daymark_Abilities();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early, at priority 5: routes read daymark_legacy_content_pages (and
@@ -561,6 +569,7 @@ final class Daymark_Plugin {
 		$this->push->register();
 		$this->followers->register();
 		$this->follow_link->register();
+		$this->abilities->register();
 		// Check the original sites for replies to comments sent from
 		// Daymark (issue #559), alongside the hourly backflow sync.
 		Daymark_Comment_Replies::register();

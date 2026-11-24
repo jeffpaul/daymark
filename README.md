@@ -197,6 +197,13 @@ how that works from a user's side.
   the `Daymark_Subscription_Source` interface and its registry — see
   `includes/sources/` for the built-in feed/WordPress-REST/microformats2/
   Friends-plugin sources as reference implementations.
+- **Let an AI agent use Daymark** through the WordPress
+  [Abilities API](https://developer.wordpress.org/apis/abilities-api/):
+  `daymark/create-mark`, `daymark/get-timeline`, `daymark/get-post`,
+  `daymark/get-notifications` and `daymark/follow-site`. Each runs as the
+  signed-in user, over `/wp-json/wp-abilities/v1/` with an application
+  password or through the MCP Adapter plugin. A Mark is a draft unless
+  the agent is asked to publish it.
 - **Filters and hooks** for AI capture defaults, publish helper adapters,
   destination defaults, comment import, and more are all documented on
   the hooks reference site linked above.
