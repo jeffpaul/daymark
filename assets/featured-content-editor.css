@@ -57,6 +57,32 @@
 	color: var( --wp-admin-theme-color, #007cba );
 }
 
+/*
+ * WordPress 7.2 builds the Post sidebar with DataForm, and its featured image
+ * field is a different button: a dashed outline in the admin theme color, with
+ * regular-weight text in that color (`.media-edit__picker-button` in core's
+ * media-utils stylesheet, read from 7.2 RC3). The rules above still match the
+ * solid grey button of WordPress 7.0 and 7.1.
+ *
+ * `.dataforms-layouts-regular__field` is the DataForm field the
+ * `editor.PostFeaturedImage` filter's output lands in on 7.2, so these rules
+ * apply only there. It is core's class name, not a public API: if core renames
+ * it, the button falls back to the older look above, and nothing breaks.
+ */
+.dataforms-layouts-regular__field .daymark-fc-toggle {
+	padding: 4px 8px;
+	border-style: dashed;
+	border-color: var( --wp-admin-theme-color, #3858e9 );
+	color: var( --wp-admin-theme-color, #3858e9 );
+	font-weight: 400;
+}
+
+.dataforms-layouts-regular__field .daymark-fc-toggle:hover {
+	background-color: color-mix( in srgb, var( --wp-admin-theme-color, #3858e9 ) 4%, transparent );
+	border-color: var( --wp-admin-theme-color-darker-20, #183ad6 );
+	color: var( --wp-admin-theme-color-darker-20, #183ad6 );
+}
+
 .daymark-fc-preview--gallery {
 	display: flex;
 	gap: 4px;
