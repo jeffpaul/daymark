@@ -601,6 +601,12 @@ The preview:
   the Marks). The blueprint and the pull request previews differ only in
   which Daymark they install.
 
+A pull request's preview installs GitHub's zip of the branch, which leaves
+out everything `.gitattributes` marks `export-ignore`, so it runs what would
+ship. It copies `.github/blueprints/` from the branch the same way. Keep it
+that way: Playground holds every installed file in the reviewer's browser
+memory, and the whole repository is many times the size of the plugin.
+
 Things to know:
 
 - **A change to a demo file is public as soon as it merges**, because the
