@@ -10,6 +10,11 @@
 // neighbors; if a later version restyles them again, the comparison fails
 // on the early-warning run first.
 //
+// TODO (WordPress 7.2 minimum): once `Requires at least` in daymark.php and
+// readme.txt is 7.2 or later, the allowances for 7.0 and 7.1 below can go:
+// compare the whole border and the exact font weight in look(), and drop the
+// notes about earlier versions.
+//
 //   npx playwright test tests/e2e/editor-sidebar.spec.js
 import { test, expect } from '@playwright/test';
 

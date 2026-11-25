@@ -68,6 +68,12 @@
  * `editor.PostFeaturedImage` filter's output lands in on 7.2, so these rules
  * apply only there. It is core's class name, not a public API: if core renames
  * it, the button falls back to the older look above, and nothing breaks.
+ *
+ * TODO (WordPress 7.2 minimum): once `Requires at least` in daymark.php and
+ * readme.txt is 7.2 or later, every supported version has this sidebar. Make
+ * the dashed look the button's only look: fold these two rules into
+ * `.daymark-fc-toggle` and `.daymark-fc-toggle:hover` above, and drop the
+ * solid grey values and the `.dataforms-layouts-regular__field` scope.
  */
 .dataforms-layouts-regular__field .daymark-fc-toggle {
 	padding: 4px 8px;

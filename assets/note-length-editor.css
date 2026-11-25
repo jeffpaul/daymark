@@ -12,6 +12,11 @@
  *
  * `.dataforms-layouts__wrapper` is core's class name, not a public API: if core
  * renames it, the row falls back to its plain look, and nothing breaks.
+ *
+ * TODO (WordPress 7.2 minimum): once `Requires at least` in daymark.php and
+ * readme.txt is 7.2 or later, every supported version has this sidebar. Drop
+ * the `.editor-post-summary:has( .dataforms-layouts__wrapper )` scope, so the
+ * grey label and semi-bold value are the row's only look.
  */
 .editor-post-summary:has( .dataforms-layouts__wrapper ) .daymark-note-length__label {
 	color: var( --wpds-color-foreground-content-neutral-weak, #707070 );
