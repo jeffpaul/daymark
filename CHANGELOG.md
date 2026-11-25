@@ -26,7 +26,7 @@ can't act on them.
 - The Bookmarks button on Explore now shows how many posts you have saved, in a small bubble on its corner, so you can tell at a glance there is something to come back to. With nothing saved, it shows nothing. ([#636](https://github.com/jeffpaul/daymark/pull/636))
 - You can try Daymark before installing it: the Live Preview button on its wordpress.org page opens a throwaway site in your browser, with sample Marks already posted and four sites already followed. ([#633](https://github.com/jeffpaul/daymark/pull/633))
 - An AI agent you connect to your site can now use Daymark for you. You can ask it to post a Mark (saved as a draft unless you ask it to publish), catch you up on what the sites you follow have posted, tell you who responded to your Marks, or follow a site. It works through WordPress's Abilities API, with your own sign-in, and can do no more than you can. ([#643](https://github.com/jeffpaul/daymark/pull/643))
-- The FAQ has a new entry, "Does Daymark label what AI writes?". It says what Daymark shows you about AI suggestions, that it adds no AI label to your published posts, and that labeling them where a law such as the EU AI Act asks for it is up to you as the publisher. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
+- The FAQ has a new entry, "Does Daymark label what AI writes?". It says what Daymark shows you about AI suggestions, that it adds no AI label to your published posts, and that labeling them where a law such as the EU AI Act asks for it is up to you as the publisher. ([#646](https://github.com/jeffpaul/daymark/pull/646))
 
 ### Changed
 
