@@ -67,11 +67,11 @@ class Daymark_Routes {
 		foreach ( self::SCREENS as $screen ) {
 			$this->app->route( 'home' === $screen ? '' : $screen, 'app-shell.php', array(), 'edit_posts' );
 		}
-		$this->app->add_menu_item( 'timeline', __( 'Timeline', 'daymark' ), self::app_url() );
-		$this->app->add_menu_item( 'explore', __( 'Explore', 'daymark' ), self::app_url( 'explore' ) );
-		$this->app->add_menu_item( 'notifications', __( 'Notifications', 'daymark' ), self::app_url( 'notifications' ) );
-		$this->app->add_menu_item( 'me', __( 'Me', 'daymark' ), self::app_url( 'me' ) );
-		$this->app->add_menu_item( 'create', __( 'New Mark', 'daymark' ), self::app_url() . '#create' );
+		if ( did_action( 'init' ) ) {
+			$this->register_app_menu();
+		} else {
+			add_action( 'init', array( $this, 'register_app_menu' ) );
+		}
 
 		foreach ( array(
 			'manifest'    => 'app-manifest.php',
@@ -87,6 +87,15 @@ class Daymark_Routes {
 		\WpApp\Registry::register_app_capability( self::app_base(), 'edit_posts' );
 		add_filter( 'redirect_canonical', array( $this, 'skip_canonical_for_app_assets' ) );
 		add_action( 'template_redirect', array( $this, 'register_offline_shell' ), 1 );
+	}
+
+	/** Register translated menu labels once WordPress can load translations. */
+	public function register_app_menu(): void {
+		$this->app->add_menu_item( 'timeline', __( 'Timeline', 'daymark' ), self::app_url() );
+		$this->app->add_menu_item( 'explore', __( 'Explore', 'daymark' ), self::app_url( 'explore' ) );
+		$this->app->add_menu_item( 'notifications', __( 'Notifications', 'daymark' ), self::app_url( 'notifications' ) );
+		$this->app->add_menu_item( 'me', __( 'Me', 'daymark' ), self::app_url( 'me' ) );
+		$this->app->add_menu_item( 'create', __( 'New Mark', 'daymark' ), self::app_url() . '#create' );
 	}
 
 	/** Configure the framework fallback after authentication and connector registration. */
