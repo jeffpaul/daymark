@@ -358,6 +358,152 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 		$this->assertSame( 'https://jane.example/wp-content/uploads/snap.jpg', $normalized['featured_image_url'] );
 	}
 
+	/**
+	 * One embedded featured image as the REST API sends it: the original
+	 * file and the smaller copies WordPress made of it.
+	 *
+	 * @param int                               $width  Original width.
+	 * @param int                               $height Original height.
+	 * @param array<string, array{0: int, 1: int}> $sizes  Copy name => width, height.
+	 * @return array<string, mixed>
+	 */
+	private function featured_media( int $width, int $height, array $sizes ): array {
+		$copies = array();
+
+		foreach ( $sizes as $name => $size ) {
+			$copies[ $name ] = array(
+				'width'      => $size[0],
+				'height'     => $size[1],
+				'source_url' => "https://jane.example/wp-content/uploads/photo-{$size[0]}x{$size[1]}.jpg",
+			);
+		}
+
+		$copies['full'] = array(
+			'width'      => $width,
+			'height'     => $height,
+			'source_url' => 'https://jane.example/wp-content/uploads/photo.jpg',
+		);
+
+		return array(
+			'source_url'    => 'https://jane.example/wp-content/uploads/photo.jpg',
+			'media_details' => array(
+				'width'  => $width,
+				'height' => $height,
+				'sizes'  => $copies,
+			),
+		);
+	}
+
+	/**
+	 * The picture normalize() picks for a post with this featured image.
+	 *
+	 * @param array<string, mixed> $media Embedded featured image.
+	 * @return string
+	 */
+	private function featured_image_for( array $media ): string {
+		$normalized = $this->source->normalize(
+			array(
+				'title'          => array( 'rendered' => 'Item' ),
+				'format'         => 'image',
+				'featured_media' => 5,
+				'_embedded'      => array( 'wp:featuredmedia' => array( $media ) ),
+			)
+		);
+
+		return (string) $normalized['featured_image_url'];
+	}
+
+	/**
+	 * A photo straight off a camera is thousands of pixels wide, and a
+	 * browser holds every one of them in memory to draw a card a few hundred
+	 * wide. The site's own smaller copy is used instead: the smallest one
+	 * that is still wide enough for a phone screen.
+	 */
+	public function test_normalize_uses_a_screen_sized_copy_of_a_large_featured_image() {
+		$media = $this->featured_media(
+			6720,
+			4480,
+			array(
+				'thumbnail'    => array( 150, 150 ),
+				'medium'       => array( 300, 200 ),
+				'medium_large' => array( 768, 512 ),
+				'2048x2048'    => array( 2048, 1365 ),
+				'large'        => array( 1024, 683 ),
+				'1536x1536'    => array( 1536, 1024 ),
+			)
+		);
+
+		$this->assertSame( 'https://jane.example/wp-content/uploads/photo-1024x683.jpg', $this->featured_image_for( $media ) );
+	}
+
+	/** A tall photo's "large" copy is too narrow, so the next one up is used. */
+	public function test_normalize_picks_a_wide_enough_copy_of_a_tall_featured_image() {
+		$media = $this->featured_media(
+			4284,
+			5712,
+			array(
+				'large'     => array( 768, 1024 ),
+				'1536x1536' => array( 1152, 1536 ),
+				'2048x2048' => array( 1536, 2048 ),
+			)
+		);
+
+		$this->assertSame( 'https://jane.example/wp-content/uploads/photo-1152x1536.jpg', $this->featured_image_for( $media ) );
+	}
+
+	/**
+	 * A copy cut to another shape (a square, a theme's banner) would show a
+	 * different picture from the one the author chose, so it is never used.
+	 */
+	public function test_normalize_never_uses_a_cropped_copy_of_a_featured_image() {
+		$media = $this->featured_media(
+			6000,
+			4000,
+			array(
+				'square'    => array( 1080, 1080 ),
+				'banner'    => array( 1200, 630 ),
+				'1536x1536' => array( 1536, 1024 ),
+			)
+		);
+
+		$this->assertSame( 'https://jane.example/wp-content/uploads/photo-1536x1024.jpg', $this->featured_image_for( $media ) );
+
+		$only_crops = $this->featured_media( 6000, 4000, array( 'banner' => array( 1200, 630 ) ) );
+
+		$this->assertSame( 'https://jane.example/wp-content/uploads/photo.jpg', $this->featured_image_for( $only_crops ) );
+	}
+
+	/**
+	 * The original stays when it is already small, when no copy is wide
+	 * enough, and when the site sends no list of copies at all.
+	 */
+	public function test_normalize_keeps_the_original_featured_image_when_no_copy_fits() {
+		$small = $this->featured_media( 1000, 667, array( 'medium' => array( 300, 200 ) ) );
+		$this->assertSame( 'https://jane.example/wp-content/uploads/photo.jpg', $this->featured_image_for( $small ) );
+
+		$narrow_copies = $this->featured_media( 1400, 933, array( 'medium_large' => array( 768, 512 ) ) );
+		$this->assertSame( 'https://jane.example/wp-content/uploads/photo.jpg', $this->featured_image_for( $narrow_copies ) );
+
+		$no_list = array( 'source_url' => 'https://jane.example/wp-content/uploads/photo.jpg' );
+		$this->assertSame( 'https://jane.example/wp-content/uploads/photo.jpg', $this->featured_image_for( $no_list ) );
+
+		$broken = array(
+			'source_url'    => 'https://jane.example/wp-content/uploads/photo.jpg',
+			'media_details' => array(
+				'width'  => 6000,
+				'height' => 4000,
+				'sizes'  => array(
+					'large' => 'not a size',
+					'empty' => array(
+						'width'  => 1024,
+						'height' => 683,
+					),
+				),
+			),
+		);
+		$this->assertSame( 'https://jane.example/wp-content/uploads/photo.jpg', $this->featured_image_for( $broken ) );
+	}
+
 	/** The content-sniff fallback never overrides a real embedded featured image with a weaker sniffed one. */
 	public function test_normalize_prefers_embedded_featured_image_over_sniffed_one() {
 		$normalized = $this->source->normalize(

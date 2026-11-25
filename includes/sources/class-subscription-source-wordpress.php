@@ -68,6 +68,16 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 	 */
 	private const DAYMARK_MEDIA_FORMATS = array( 'image', 'video', 'audio', 'gallery' );
 
+	/**
+	 * How wide a featured image needs to be for a card or the post view, in
+	 * pixels: enough for a phone screen at three device pixels to one. A
+	 * site's own copy at least this wide is used in place of the original
+	 * (see display_image_url()).
+	 *
+	 * @var int
+	 */
+	private const DISPLAY_IMAGE_WIDTH = 1024;
+
 
 	/**
 	 * Source ID.
@@ -261,7 +271,7 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 		$featured_image_url = '';
 
 		if ( isset( $raw_item['_embedded']['wp:featuredmedia'][0]['source_url'] ) ) {
-			$featured_image_url = esc_url_raw( (string) $raw_item['_embedded']['wp:featuredmedia'][0]['source_url'] );
+			$featured_image_url = esc_url_raw( self::display_image_url( (array) $raw_item['_embedded']['wp:featuredmedia'][0] ) );
 		}
 
 		// The real `format` field is only ever set when the site's theme
@@ -384,6 +394,59 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 		$interaction = Daymark_Post_Kinds::interaction_from_rest( $kind, $content_html, $permalink );
 
 		return null === $interaction ? $normalized : array_merge( $normalized, $interaction );
+	}
+
+	/**
+	 * The address of a featured image at a size fit for a screen.
+	 *
+	 * `source_url` is the file as it was uploaded, which for a photo straight
+	 * off a camera is often 6000 pixels wide: about 100 MB of memory once a
+	 * browser draws it, for a card under 400 pixels wide. A dozen of those
+	 * on the Timeline is over a gigabyte. WordPress already made smaller
+	 * copies and lists them next to the original, so this picks the smallest
+	 * one that is still at least DISPLAY_IMAGE_WIDTH wide.
+	 *
+	 * A copy cut to a different shape (a square thumbnail, a theme's banner
+	 * crop) is skipped, so the picture stays the one its author chose. With
+	 * no usable list, or none of its copies wide enough, the original is
+	 * returned, exactly as before.
+	 *
+	 * @param array<string, mixed> $media One embedded `wp:featuredmedia` item.
+	 * @return string
+	 */
+	private static function display_image_url( array $media ): string {
+		$original = (string) ( $media['source_url'] ?? '' );
+		$details  = is_array( $media['media_details'] ?? null ) ? $media['media_details'] : array();
+		$width    = (int) ( $details['width'] ?? 0 );
+		$height   = (int) ( $details['height'] ?? 0 );
+
+		if ( $width <= self::DISPLAY_IMAGE_WIDTH || $height <= 0 || ! is_array( $details['sizes'] ?? null ) ) {
+			return $original;
+		}
+
+		$best       = $original;
+		$best_width = $width;
+
+		foreach ( $details['sizes'] as $size ) {
+			$size_url    = is_array( $size ) ? (string) ( $size['source_url'] ?? '' ) : '';
+			$size_width  = is_array( $size ) ? (int) ( $size['width'] ?? 0 ) : 0;
+			$size_height = is_array( $size ) ? (int) ( $size['height'] ?? 0 ) : 0;
+
+			if ( '' === $size_url || $size_width < self::DISPLAY_IMAGE_WIDTH || $size_width >= $best_width || $size_height <= 0 ) {
+				continue;
+			}
+
+			// Same shape as the original, give or take the rounding
+			// WordPress does when it scales one down.
+			if ( abs( ( $size_width / $size_height ) - ( $width / $height ) ) > 0.02 ) {
+				continue;
+			}
+
+			$best       = $size_url;
+			$best_width = $size_width;
+		}
+
+		return $best;
 	}
 
 	/**
