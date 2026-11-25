@@ -347,33 +347,13 @@ echo in_array($note_id, $note_ids, true) ? "PASS: GET /marks?type=note contains 
 // /daymark/notifications already was), not just client-side hash states.
 // extra_rules_top (not wp_rewrite_rules(), which reads the *persisted*
 // rewrite_rules option and can be stale within a single request) is what
-// Daymark_Routes::register() — already run once via the init hook that
-// bootstrapped this process — actually populated; same technique
-// Test_Routes::registered_rules() uses in the PHPUnit suite.
-global $wp_rewrite;
-$rules = (array) $wp_rewrite->extra_rules_top;
-$has_route = static function ($screen) use ($rules) {
-  foreach ($rules as $query) {
-    if (false !== strpos($query, "daymark_app={$screen}")) { return true; }
-  }
-  return false;
-};
-foreach (array("explore", "search", "me") as $screen) {
-  echo $has_route($screen) ? "PASS: /daymark/{$screen} rewrite rule registered\n" : "FAIL: no rewrite rule maps to daymark_app={$screen}\n";
+// App screens and endpoints are all registered on the WP App router.
+$base = Daymark_Routes::app_base();
+$router = \WpApp\Registry::get_apps()[$base] ?? null;
+$routes = $router ? $router->get_routes() : array();
+foreach (array("explore", "search", "me", "manifest", "config", "worker", "offline") as $path) {
+  echo isset($routes[$path]) ? "PASS: /{$base}/{$path} framework route registered\n" : "FAIL: missing framework route {$path}\n";
 }
-
-// Cold-offline-load support (issue #126): config.json/sw.js/offline.html
-// rewrite rules registered the same way. Not exercising the actual
-// header()+exit-calling branches here (same posture this suite already
-// takes toward the pre-existing manifest.json branch) — that live HTTP
-// behavior is covered by PHPUnit's non-exiting building blocks
-// (Test_Cold_Offline_Shell) and manual/Playwright verification instead.
-$has_asset_route = static function ($screen, $pattern) use ($rules) {
-  return isset($rules[$pattern]) && false !== strpos($rules[$pattern], "daymark_app={$screen}");
-};
-echo $has_asset_route("config", "^daymark/config\.json$") ? "PASS: /daymark/config.json rewrite rule registered\n" : "FAIL: no rewrite rule maps /daymark/config.json to daymark_app=config\n";
-echo $has_asset_route("sw", "^daymark/sw\.js$") ? "PASS: /daymark/sw.js rewrite rule registered\n" : "FAIL: no rewrite rule maps /daymark/sw.js to daymark_app=sw\n";
-echo $has_asset_route("offline", "^daymark/offline\.html$") ? "PASS: /daymark/offline.html rewrite rule registered\n" : "FAIL: no rewrite rule maps /daymark/offline.html to daymark_app=offline\n";
 PHP
 run_eval "content-type pages retired" "$PHP"
 

@@ -21,3 +21,7 @@ playwright-report/
 # Generated hooks documentation site
 wp-hooks-docs/
 !lib/composer.lock
+
+# Runtime WP App is generated locally and bundled only in distributions.
+!lib/framework/composer.lock
+lib/framework/packages/

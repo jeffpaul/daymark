@@ -5,7 +5,7 @@ permissions:
 
 on:
   push:
-    branches: [main]
+    branches: [main, convert-to-wp-app]
   pull_request:
 
 # A newer push to a pull request makes the run for the previous commit
@@ -279,6 +279,7 @@ jobs:
         with:
           php-version: '8.2'
           extensions: mysqli, gd
+          tools: composer
           coverage: none
 
       # Installed by our own script (retries + checksum), not setup-php's
@@ -294,6 +295,10 @@ jobs:
           wp config create --path=/tmp/wp --dbname=wp_smoke --dbuser=root --dbpass=root --dbhost=127.0.0.1
           wp core install --path=/tmp/wp --url=http://smoke.test --title=Smoke \
             --admin_user=admin --admin_password=admin --admin_email=admin@smoke.test --skip-email
+
+      - name: Install runtime dependencies
+        if: needs.changes.outputs.code == 'true'
+        run: bash bin/build-framework.sh
 
       - name: Link and activate the plugin
         if: needs.changes.outputs.code == 'true'
@@ -339,6 +344,7 @@ jobs:
         with:
           php-version: '8.2'
           extensions: mysqli, gd
+          tools: composer
           coverage: none
 
       # Installed by our own script (retries + checksum), not setup-php's
@@ -356,6 +362,10 @@ jobs:
             --admin_user=admin --admin_password=admin --admin_email=admin@e2e.test --skip-email
           # /daymark and the section pages need pretty permalinks in a browser.
           wp rewrite structure '/%postname%/' --path=/tmp/wp
+
+      - name: Install runtime dependencies
+        if: needs.changes.outputs.code == 'true'
+        run: bash bin/build-framework.sh
 
       - name: Link and activate the plugin
         if: needs.changes.outputs.code == 'true'

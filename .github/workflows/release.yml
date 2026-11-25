@@ -55,18 +55,17 @@ jobs:
             fi
           done
 
+      - name: Set up PHP for runtime dependencies
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.2'
+          tools: composer
+          coverage: none
+
       - name: Build distribution zip
         run: |
-          # Previously built via `wp dist-archive` (wp-cli/dist-archive-command),
-          # which shells out to wp-cli's own internal Composer bootstrap to
-          # install itself — that bootstrap started rejecting the runner's
-          # GITHUB_TOKEN format outright ("github oauth token ... contains
-          # invalid characters"), deterministically failing every run
-          # regardless of retries or an explicit COMPOSER_AUTH override.
-          # Plain rsync avoids wp-cli/Composer entirely and matches
-          # plugin-check.yml's own already-working dist build.
           workdir=$(mktemp -d)
-          rsync -a --exclude-from=.distignore --exclude='.git' ./ "$workdir/daymark/"
+          bash bin/build-dist.sh "$workdir/daymark"
           (cd "$workdir" && zip -rq daymark.zip daymark)
           mv "$workdir/daymark.zip" "$PWD/daymark.zip"
           unzip -l daymark.zip
@@ -76,6 +75,8 @@ jobs:
           listing=$(unzip -l daymark.zip)
           echo "$listing" | grep -q 'daymark/readme.txt' || { echo '::error::readme.txt missing from zip'; exit 1; }
           echo "$listing" | grep -q 'daymark/daymark.php' || { echo '::error::daymark.php missing from zip'; exit 1; }
+          echo "$listing" | grep -q 'daymark/lib/framework/packages/autoload.php' || { echo '::error::runtime autoloader missing'; exit 1; }
+          echo "$listing" | grep -q 'daymark/lib/framework/packages/akirk/wp-app/LICENSE' || { echo '::error::WP App license missing'; exit 1; }
           for banned in 'daymark/tests/' 'daymark/docs/' 'daymark/README.md' 'daymark/CHANGELOG.md' 'daymark/CLAUDE.md' 'daymark/node_modules/' 'daymark/vendor/' 'daymark/daymark-connector-'; do
             if echo "$listing" | grep -q "$banned"; then
               echo "::error::dev file leaked into zip: $banned"
@@ -91,9 +92,10 @@ jobs:
             echo "::error::Markdown file at the top of the zip: $stray"
             exit 1
           fi
-          # Every file in the zip must be git-tracked — catches untracked
-          # strays (build caches, local scratch files) .distignore missed.
+          # Only the runtime generated from its lockfile may be untracked.
+          # Other untracked files are checkout strays, never release inputs.
           unzip -Z1 daymark.zip | sed -n 's|^daymark/||p' | grep -v '/$' | grep . | while read -r f; do
+            case "$f" in lib/framework/packages/*) continue ;; esac
             git ls-files --error-unmatch "$f" >/dev/null 2>&1 || { echo "::error::untracked file in zip: $f"; exit 1; }
           done
 

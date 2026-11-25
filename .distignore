@@ -37,3 +37,6 @@ phpunit.xml.dist
 playwright.config.js
 README.md
 wp-hooks-doc.json
+
+lib/framework/composer.json
+lib/framework/composer.lock

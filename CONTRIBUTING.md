@@ -107,12 +107,18 @@ the repo is symlinked into a WordPress install as `wp-content/plugins/daymark`.
 | `wp-hooks-docs/` | Docusaurus site for the generated hook reference |
 | `docs/` | Product/spec documents (excluded from the distributed plugin) |
 
-`.distignore` controls what is excluded from the built plugin zip (tests,
-tooling, and docs are all excluded). `.gitattributes` does the same for the
-"Source code" archives GitHub builds for each tag. A new development-only file
-at the repo root goes in both lists; `bin/check-dist.sh` fails when the two
-would ship different files, or when a Markdown file would ship at the top of
-the plugin, and CI runs it.
+`.distignore` excludes development files from the installable distribution.
+`bash bin/build-dist.sh /tmp/daymark-dist` builds that distribution from source
+and installs the locked WP App runtime into `lib/framework/packages/`, separate
+from development tools in `vendor/`. Neither generated directory is committed.
+
+GitHub source archives contain the runtime manifest and lockfile instead of
+installed dependencies. Run `composer install --working-dir=lib/framework --no-dev`
+before using a source archive; use the release ZIP for a ready-to-install plugin.
+`bin/check-dist.sh` checks the tracked payload, allowing those source-only
+Composer files. Plugin Check builds and checks the complete distribution. Plugin Check uploads an installable `daymark-dist` artifact for manual
+Playground testing. Source-based previews need that built ZIP; installing the
+raw branch alone does not install its Composer runtime.
 
 ## Development setup
 

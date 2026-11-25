@@ -14,7 +14,8 @@
 #
 # This fails when:
 #
-#   - the two would hold different files, which means a path is in one list
+#   - the tracked payloads differ (apart from source-only runtime manifests),
+#     which means a path is in one list
 #     and not the other
 #   - a Markdown file would ship at the top of the plugin. Notes for people
 #     working on Daymark (README.md, CONTRIBUTING.md, a one-off write-up)
@@ -35,15 +36,15 @@ trap 'rm -rf "$work"' EXIT
 # Every staged file, written out with nothing left out yet.
 git checkout-index --all --prefix="$work/src/"
 
-# The plugin zip's files: the same rsync call release.yml and
-# plugin-check.yml use.
+# The tracked distribution payload; build-dist.sh adds the locked runtime.
 mkdir "$work/zip"
 ( cd "$work/src" && rsync -a --exclude-from=.distignore --exclude='.git' ./ "$work/zip/" )
 ( cd "$work/zip" && find . -type f | sed 's|^\./||' | LC_ALL=C sort ) > "$work/zip.txt"
 
+# Source archives keep the runtime manifest/lockfile for Composer setup.
 # The source archive's files. `git archive` reads .gitattributes from the tree
 # it is given, so the staged copy is the one that counts.
-git archive "$(git write-tree)" | tar -t | grep -v '/$' | LC_ALL=C sort > "$work/archive.txt"
+git archive "$(git write-tree)" | tar -t | grep -v '/$' | grep -vE '^lib/framework/composer\.(json|lock)$' | LC_ALL=C sort > "$work/archive.txt"
 
 status=0
 
@@ -74,7 +75,7 @@ if [ -n "$stray" ]; then
 fi
 
 if [ "$status" -eq 0 ]; then
-	echo "OK: the plugin zip and the source archive hold the same $(wc -l < "$work/zip.txt" | tr -d ' ') files."
+	echo "OK: distribution source and source archive agree on $(wc -l < "$work/zip.txt" | tr -d ' ') files."
 fi
 
 exit "$status"

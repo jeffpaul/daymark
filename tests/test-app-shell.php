@@ -20,12 +20,34 @@ class Test_App_Shell extends WP_UnitTestCase {
 		wp_set_current_user( $user_id );
 
 		$this->go_to( '/' );
-		set_query_var( Daymark_Routes::QUERY_VAR, 'home' );
+		set_query_var( 'wp_app_path', Daymark_Routes::app_base() );
+		set_query_var( 'wp_app_request', '' );
 
 		ob_start();
 		include DAYMARK_PLUGIN_DIR . 'templates/app-shell.php';
 
 		return (string) ob_get_clean();
+	}
+
+	/** Framework navigation scripts must work under the shell's strict CSP. */
+	public function test_masterbar_script_has_the_shell_nonce() {
+		$html = $this->render_shell();
+
+		$this->assertStringContainsString( 'daymark-app--masterbar', $html );
+		$this->assertStringContainsString( 'admin-bar-css', $html );
+		$tags            = new WP_HTML_Tag_Processor( $html );
+		$masterbar_nonce = null;
+		$app_nonce       = null;
+		while ( $tags->next_tag( 'SCRIPT' ) ) {
+			if ( 'wp-app-masterbar-scripts' === $tags->get_attribute( 'id' ) ) {
+				$masterbar_nonce = $tags->get_attribute( 'nonce' );
+			}
+			if ( 'daymark-app-js-before' === $tags->get_attribute( 'id' ) ) {
+				$app_nonce = $tags->get_attribute( 'nonce' );
+			}
+		}
+		$this->assertNotEmpty( $masterbar_nonce );
+		$this->assertSame( $app_nonce, $masterbar_nonce );
 	}
 
 	/** The app shell loads the Featured Content slider and styles, for galleries in the full post view. */
