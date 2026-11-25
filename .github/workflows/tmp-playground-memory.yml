@@ -1,0 +1,45 @@
+name: TEMPORARY Playground memory
+
+# Temporary, removed before this branch is ready for review. Measures how
+# much memory a Playground preview takes in Chromium, for a few ways of
+# building the preview.
+
+on:
+  push:
+    branches: [claude/project-thread-weygzs]
+    paths:
+      - '.github/tmp-memory/**'
+      - '.github/workflows/tmp-playground-memory.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: ${{ matrix.variant }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [bare, current, current-nodemo, zip, zip-nodemo, zip-admin]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Measure
+        env:
+          VARIANT: ${{ matrix.variant }}
+          REPEATS: '2'
+          OUT_DIR: ${{ runner.temp }}/shots
+        run: |
+          mkdir -p "$OUT_DIR"
+          node .github/tmp-memory/measure.js
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: shots-${{ matrix.variant }}
+          path: ${{ runner.temp }}/shots
