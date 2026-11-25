@@ -137,9 +137,10 @@ subscription, and nothing else to configure before your first post.
 ## Learn more
 
 The full FAQ — how syndication and replies work, which AI providers are
-supported, what Daymark quietly captures and how to turn it off, offline
-behavior, and more — lives in **[readme.txt](readme.txt)**, the same
-content that appears on the plugin's wordpress.org listing.
+supported, whether Daymark labels what AI writes, what Daymark quietly
+captures and how to turn it off, offline behavior, and more — lives in
+**[readme.txt](readme.txt)**, the same content that appears on the
+plugin's wordpress.org listing.
 
 ---
 
