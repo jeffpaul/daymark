@@ -16,6 +16,8 @@ class Test_Note_Length extends WP_UnitTestCase {
 		wp_dequeue_script( Daymark_Note_Length::HANDLE );
 		wp_deregister_script( Daymark_Note_Length::HANDLE );
 		wp_deregister_script( Daymark_Note_Length::SHARED_HANDLE );
+		wp_dequeue_style( Daymark_Note_Length::HANDLE );
+		wp_deregister_style( Daymark_Note_Length::HANDLE );
 		set_current_screen( 'front' );
 
 		parent::tear_down();
@@ -44,6 +46,15 @@ class Test_Note_Length extends WP_UnitTestCase {
 		$this->assertStringContainsString( '"limit":"300"', $data );
 		// Other tests define ATmosphere's functions, so only the key is fixed here.
 		$this->assertMatchesRegularExpression( '/"atmosphere":"1?"/', $data );
+	}
+
+	/** The stylesheet that matches the row to the sidebar's own rows loads with it. */
+	public function test_stylesheet_enqueued_with_the_counter(): void {
+		$this->enqueue_for( 'post' );
+
+		$this->assertTrue( wp_style_is( Daymark_Note_Length::HANDLE, 'enqueued' ) );
+		$this->assertStringEndsWith( 'assets/note-length-editor.css', wp_styles()->registered[ Daymark_Note_Length::HANDLE ]->src );
+		$this->assertFileExists( DAYMARK_PLUGIN_DIR . 'assets/note-length-editor.css' );
 	}
 
 	/** The counter counts with the shared script, which the app's composer loads too. */
@@ -82,6 +93,7 @@ class Test_Note_Length extends WP_UnitTestCase {
 		$this->enqueue_for( 'page' );
 
 		$this->assertFalse( wp_script_is( Daymark_Note_Length::HANDLE, 'enqueued' ) );
+		$this->assertFalse( wp_style_is( Daymark_Note_Length::HANDLE, 'enqueued' ) );
 	}
 
 	/** The limit can be changed with a filter, and is never below 1. */

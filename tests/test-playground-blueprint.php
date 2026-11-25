@@ -86,7 +86,7 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 			'the pull request preview' => $workflow,
 		);
 
-		$this->assertStringContainsString( "'/.github/blueprints/set-up-demo.php'", $workflow );
+		$this->assertStringContainsString( "'/daymark-demo/set-up-demo.php'", $workflow );
 
 		foreach ( $sources as $name => $source ) {
 			$this->assertStringContainsString( 'set-up-demo.php', $source, "$name runs the shared script." );
@@ -95,6 +95,27 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 				$this->assertStringNotContainsString( $own, $source, "$name should leave \"$own\" to set-up-demo.php." );
 			}
 		}
+	}
+
+	/**
+	 * The pull request preview installs Daymark from GitHub's zip of the
+	 * branch, which carries only what ships, and fetches the demo folder on
+	 * its own. Installing the whole branch instead put every file in the
+	 * repository, the before/after pictures of every pull request among
+	 * them, into the reviewer's browser memory, and made the preview slow to
+	 * come up.
+	 */
+	public function test_pull_request_preview_installs_only_what_ships(): void {
+		$workflow = (string) file_get_contents( $this->repo_path( '.github/workflows/pr-playground-preview.yml' ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local repository file.
+
+		$this->assertStringContainsString( '/archive/refs/heads/', $workflow, 'installs from the zip of the branch' );
+		$this->assertStringContainsString( "targetFolderName: 'daymark'", $workflow, 'into the folder a real site uses' );
+		$this->assertStringContainsString( "path: '.github/blueprints'", $workflow, 'and fetches only the demo folder with git' );
+		$this->assertStringNotContainsString( "path: '/'", $workflow, 'never the whole branch' );
+
+		// The zip leaves the demo folder out, which is why it is fetched on
+		// its own. If it ever ships, the preview no longer needs that step.
+		$this->assertMatchesRegularExpression( '/^\.github\s+export-ignore$/m', (string) file_get_contents( $this->repo_path( '.gitattributes' ) ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local repository file.
 	}
 
 	/**

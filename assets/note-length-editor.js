@@ -131,10 +131,15 @@
 				el(
 					'div',
 					{ style: { display: 'flex', justifyContent: 'space-between', gap: '8px' } },
-					el( 'span', null, kindLabel( state.kind, over ) ),
+					// The class names are for assets/note-length-editor.css, which
+					// matches this row to WordPress 7.2's summary rows.
+					el( 'span', { className: 'daymark-note-length__label' }, kindLabel( state.kind, over ) ),
 					el(
 						'span',
-						{ style: over ? { color: '#cc1818', fontWeight: 600 } : undefined },
+						{
+							className: 'daymark-note-length__value',
+							style: over ? { color: '#cc1818', fontWeight: 600 } : undefined,
+						},
 						value
 					)
 				),
