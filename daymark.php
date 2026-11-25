@@ -103,6 +103,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-calendar.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-look-back.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-site-suggestions.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-connections.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-abilities.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-bridgy-fed.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-jetpack-engagement.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-reader-import.php';
