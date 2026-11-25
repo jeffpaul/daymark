@@ -1,12 +1,13 @@
 // TEMPORARY: measures how much memory a Playground preview takes in Chromium.
 // Removed before this branch is ready for review.
-const { chromium } = require('@playwright/test');
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || '@playwright/test');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
 const variant = process.env.VARIANT;
-const repeats = Number(process.env.REPEATS || 2);
+const repeats = Number(process.env.REPEATS || 1);
+const idleSeconds = Number(process.env.IDLE_SECONDS || 180);
 const REPO = process.env.REPO_URL || 'https://github.com/jeffpaul/daymark';
 const REF = process.env.REF || 'main';
 const outDir = process.env.OUT_DIR || '.';
@@ -43,6 +44,8 @@ const variants = {
 	// The plugin from GitHub's zip of the branch (which leaves out the development files), demo files fetched on their own.
 	zip: { ...base, steps: [debug, permalinks, zipInstall, demoFiles, { step: 'runPHP', code: demoFromContent }] },
 	'zip-nodemo': { ...base, steps: [debug, permalinks, zipInstall] },
+	// Today's preview without Playground's own toolbar around it.
+	'current-seamless': { ...base, steps: [debug, permalinks, gitInstall, { step: 'runPHP', code: demoFromPlugin }] },
 	// As zip, landing in wp-admin, to see what the Daymark app itself adds.
 	'zip-admin': { ...base, landingPage: '/wp-admin/', steps: [debug, permalinks, zipInstall, demoFiles, { step: 'runPHP', code: demoFromContent }] },
 };
@@ -89,7 +92,7 @@ const mb = (kb) => Math.round(kb / 1024);
 
 async function run(n) {
 	const blueprint = variants[variant];
-	const url = 'https://playground.wordpress.net/?blueprint-url=data:application/json,' + encodeURIComponent(JSON.stringify(blueprint));
+	const url = 'https://playground.wordpress.net/?' + (variant.endsWith('-seamless') ? 'mode=seamless&' : '') + 'blueprint-url=data:application/json,' + encodeURIComponent(JSON.stringify(blueprint));
 	const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pgmem-'));
 	const context = await chromium.launchPersistentContext(userDataDir, {
 		channel: 'chromium',
@@ -131,33 +134,75 @@ async function run(n) {
 		await page.waitForTimeout(500);
 	}
 	const readySeconds = Math.round((Date.now() - started) / 1000);
-	const atReady = sample(userDataDir);
+	const bootPeak = peak;
 
-	// Let it sit, the way a tab does while someone reads the Timeline.
+	// Let it sit for a moment once it is up.
 	await page.waitForTimeout(45000);
 	const settled = sample(userDataDir);
 
-	let dom = null;
+	const describe = async () => frame ? frame.evaluate(() => ({
+		url: location.pathname + location.hash,
+		articles: document.querySelectorAll('article').length,
+		images: document.images.length,
+		imagesLoaded: [...document.images].filter((i) => i.complete && i.naturalWidth > 0).length,
+		text: document.body.innerText.replace(/\s+/g, ' ').slice(0, 160),
+	})).catch((e) => ({ error: String(e).slice(0, 200) })) : null;
+	const domAtRest = await describe();
+
+	// Use it for a while, the way a reviewer would.
+	peak = { total: 0 };
+	const useNotes = [];
 	if (frame) {
-		dom = await frame.evaluate(() => ({
-			url: location.pathname,
-			articles: document.querySelectorAll('article').length,
-			images: document.images.length,
-			imagesLoaded: [...document.images].filter((i) => i.complete && i.naturalWidth > 0).length,
-			text: document.body.innerText.replace(/\s+/g, ' ').slice(0, 400),
-		})).catch((e) => ({ error: String(e) }));
+		try {
+			if (landing.startsWith('/daymark')) {
+				for (let i = 0; i < 20; i++) {
+					await frame.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)).catch(() => {});
+					await page.waitForTimeout(1500);
+				}
+				useNotes.push('scrolled:' + (await frame.evaluate(() => document.querySelectorAll('article').length).catch(() => -1)));
+				for (const hash of ['#explore', '#notifications', '#me', '#home']) {
+					await frame.click(`.daymark-bottomnav__link[href="${hash}"]`, { timeout: 5000 }).catch((e) => useNotes.push('noclick ' + hash));
+					await page.waitForTimeout(4000);
+				}
+				const opened = await frame.click('article a[href]', { timeout: 5000 }).then(() => true).catch(() => false);
+				useNotes.push('opened:' + opened);
+				await page.waitForTimeout(8000);
+				for (let i = 0; i < 10; i++) {
+					await frame.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)).catch(() => {});
+					await page.waitForTimeout(1500);
+				}
+			} else {
+				for (const sel of ['#menu-posts > a', '#menu-media > a', '#menu-plugins > a', '#menu-settings > a', '#menu-dashboard > a', '#menu-posts > a', '#menu-plugins > a']) {
+					frame = page.frames().find((f) => f.url().includes('scope:') && f.url().includes('/wp-admin')) || frame;
+					await frame.click(sel, { timeout: 8000 }).catch(() => useNotes.push('noclick ' + sel));
+					await page.waitForTimeout(8000);
+				}
+			}
+		} catch (e) { useNotes.push('use failed ' + String(e).slice(0, 120)); }
 	}
-	await page.screenshot({ path: path.join(outDir, `${variant}-${n}.png`) }).catch(() => {});
+	const peakUse = peak;
+	await page.waitForTimeout(15000);
+	const afterUse = sample(userDataDir);
+	const domAfterUse = await describe();
+
+	// Then leave the tab alone.
+	const idleSeries = [];
+	for (let t = 0; t < idleSeconds; t += 60) {
+		await page.waitForTimeout(60000);
+		idleSeries.push(mb(sample(userDataDir).total));
+	}
 	clearInterval(timer);
 
 	const result = {
 		variant, run: n, readySeconds, found: !!frame,
-		idleMB: mb(idle.total),
-		peakMB: mb(peak.total), peakBiggestRendererMB: mb(peak.biggest || 0),
-		atReadyMB: mb(atReady.total),
+		browserAloneMB: mb(idle.total),
+		bootPeakMB: mb(bootPeak.total),
 		settledMB: mb(settled.total), settledBiggestRendererMB: mb(settled.biggest),
-		settledByType: Object.fromEntries(Object.entries(settled.byType).map(([k, v]) => [k, mb(v)])),
-		dom, errors: errors.slice(0, 8),
+		usePeakMB: mb(peakUse.total),
+		afterUseMB: mb(afterUse.total), afterUseBiggestRendererMB: mb(afterUse.biggest),
+		idleSeriesMB: idleSeries,
+		domAtRest, domAfterUse, useNotes,
+		errors: errors.filter((e) => !/429|Manifest fetch|Permissions policy|bad HTTP response code \(404\)/.test(e)).slice(0, 5),
 	};
 	console.log('RESULT ' + JSON.stringify(result));
 	await context.close();

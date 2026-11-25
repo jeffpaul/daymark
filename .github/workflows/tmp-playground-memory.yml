@@ -16,30 +16,23 @@ permissions:
 
 jobs:
   measure:
-    name: ${{ matrix.variant }}
+    name: run ${{ matrix.rep }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        variant: [bare, current, current-nodemo, zip, zip-nodemo, zip-admin]
+        rep: [1, 2]
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
       - name: Measure
-        env:
-          VARIANT: ${{ matrix.variant }}
-          REPEATS: '2'
-          OUT_DIR: ${{ runner.temp }}/shots
         run: |
-          mkdir -p "$OUT_DIR"
-          node .github/tmp-memory/measure.js
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: shots-${{ matrix.variant }}
-          path: ${{ runner.temp }}/shots
+          mkdir work && cd work
+          npm init -y > /dev/null
+          npm i playwright@1.65.1 > /dev/null 2>&1
+          npx playwright install --with-deps chromium > /dev/null 2>&1
+          curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}/.github/tmp-memory/measure.js" -o measure.js
+          for v in bare current zip current-seamless; do
+            PLAYWRIGHT_MODULE="$PWD/node_modules/playwright" VARIANT="$v" node measure.js > "$v.log" 2>&1 &
+          done
+          wait
+          cat *.log
