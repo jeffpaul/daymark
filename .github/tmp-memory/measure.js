@@ -45,7 +45,6 @@ const variants = {
 	zip: { ...base, steps: [debug, permalinks, zipInstall, demoFiles, { step: 'runPHP', code: demoFromContent }] },
 	'zip-nodemo': { ...base, steps: [debug, permalinks, zipInstall] },
 	// Today's preview without Playground's own toolbar around it.
-	'current-seamless': { ...base, steps: [debug, permalinks, gitInstall, { step: 'runPHP', code: demoFromPlugin }] },
 	// As zip, landing in wp-admin, to see what the Daymark app itself adds.
 	'zip-admin': { ...base, landingPage: '/wp-admin/', steps: [debug, permalinks, zipInstall, demoFiles, { step: 'runPHP', code: demoFromContent }] },
 };
@@ -91,13 +90,14 @@ function sample(userDataDir) {
 const mb = (kb) => Math.round(kb / 1024);
 
 async function run(n) {
-	const blueprint = variants[variant];
-	const url = 'https://playground.wordpress.net/?' + (variant.endsWith('-seamless') ? 'mode=seamless&' : '') + 'blueprint-url=data:application/json,' + encodeURIComponent(JSON.stringify(blueprint));
+	const blueprint = variants[variant.replace(/-(seamless|noimages)/g, '')];
+	const url = 'https://playground.wordpress.net/?' + (variant.includes('-seamless') ? 'mode=seamless&' : '') + 'blueprint-url=data:application/json,' + encodeURIComponent(JSON.stringify(blueprint));
 	const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pgmem-'));
 	const context = await chromium.launchPersistentContext(userDataDir, {
 		channel: 'chromium',
 		headless: true,
 		viewport: { width: 1280, height: 900 },
+		args: variant.includes('-noimages') ? ['--blink-settings=imagesEnabled=false'] : [],
 	});
 	const page = context.pages()[0] || (await context.newPage());
 	const errors = [];
@@ -134,6 +134,14 @@ async function run(n) {
 		await page.waitForTimeout(500);
 	}
 	const readySeconds = Math.round((Date.now() - started) / 1000);
+	if (!frame) {
+		clearInterval(timer);
+		const seen = await page.evaluate(() => document.body.innerText.replace(/\s+/g, ' ').slice(0, 200)).catch(() => '');
+		const r = { variant, run: n, found: false, readySeconds, seen, frames: page.frames().map((f) => f.url().slice(0, 80)).slice(0, 5), errors: errors.slice(0, 4).map((e) => e.slice(0, 120)) };
+		console.log('RESULT ' + JSON.stringify(r));
+		await context.close();
+		return r;
+	}
 
 	// Let it sit for a moment once it is up.
 	await page.waitForTimeout(45000);
@@ -145,7 +153,9 @@ async function run(n) {
 		articles: document.querySelectorAll('article').length,
 		images: document.images.length,
 		imagesLoaded: [...document.images].filter((i) => i.complete && i.naturalWidth > 0).length,
-		text: document.body.innerText.replace(/\s+/g, ' ').slice(0, 160),
+		decodedIfAllMB: Math.round([...document.images].reduce((n, i) => n + i.naturalWidth * i.naturalHeight * 4, 0) / 1048576),
+		biggest: [...document.images].sort((a, b) => b.naturalWidth * b.naturalHeight - a.naturalWidth * a.naturalHeight).slice(0, 4).map((i) => `${i.naturalWidth}x${i.naturalHeight} shown ${i.width}x${i.height} ${new URL(i.currentSrc || i.src, location.href).host}`),
+		text: document.body.innerText.replace(/\s+/g, ' ').slice(0, 100),
 	})).catch((e) => ({ error: String(e).slice(0, 200) })) : null;
 	const domAtRest = await describe();
 
@@ -160,8 +170,12 @@ async function run(n) {
 					await page.waitForTimeout(1500);
 				}
 				useNotes.push('scrolled:' + (await frame.evaluate(() => document.querySelectorAll('article').length).catch(() => -1)));
+				const scrolledMB = mb(sample(userDataDir).total);
+				useNotes.push('afterScrollMB:' + scrolledMB);
+				await frame.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
+				await page.waitForTimeout(1500);
 				for (const hash of ['#explore', '#notifications', '#me', '#home']) {
-					await frame.click(`.daymark-bottomnav__link[href="${hash}"]`, { timeout: 5000 }).catch((e) => useNotes.push('noclick ' + hash));
+					await frame.locator(`a[href="${hash}"]:visible`).first().click({ timeout: 5000 }).catch((e) => useNotes.push('noclick ' + hash + ' ' + String(e).replace(/\s+/g, ' ').slice(0, 90)));
 					await page.waitForTimeout(4000);
 				}
 				const opened = await frame.click('article a[href]', { timeout: 5000 }).then(() => true).catch(() => false);
@@ -210,8 +224,11 @@ async function run(n) {
 }
 
 (async () => {
-	if (!variants[variant]) throw new Error('Unknown variant ' + variant);
+	if (!variants[variant.replace(/-(seamless|noimages)/g, '')]) throw new Error('Unknown variant ' + variant);
 	for (let n = 1; n <= repeats; n++) {
-		try { await run(n); } catch (e) { console.log('RESULT ' + JSON.stringify({ variant, run: n, failed: String(e) })); }
+		try {
+			let r = await run(n);
+			for (let again = 0; again < 2 && !r.found; again++) { await new Promise((res) => setTimeout(res, 90000)); r = await run(n); }
+		} catch (e) { console.log('RESULT ' + JSON.stringify({ variant, run: n, failed: String(e) })); }
 	}
 })();
