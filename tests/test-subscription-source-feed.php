@@ -187,6 +187,41 @@ class Test_Subscription_Source_Feed extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Scenario: a minified page writes its feed link without quotes around
+	 * the attribute values, which HTML allows. The feed is still found.
+	 */
+	public function test_discover_reads_unquoted_link_attributes() {
+		$html = '<html><head><title>Example</title>'
+			. '<link rel=alternate type=application/rss+xml href=/feed.xml title=Example>'
+			. '</head><body></body></html>';
+
+		$this->mock_response( 'https://example.com/', $html );
+
+		$discovered = $this->source->discover( 'https://example.com/' );
+
+		$this->assertCount( 1, $discovered );
+		$this->assertSame( 'https://example.com/feed.xml', $discovered[0]['url'] );
+		$this->assertSame( 'Example', $discovered[0]['title'] );
+	}
+
+	/**
+	 * Scenario: a feed link the site has commented out is not a link at
+	 * all, so only the live one is offered.
+	 */
+	public function test_discover_ignores_a_commented_out_feed_link() {
+		$html = '<html><head><title>Example</title>'
+			. '<!-- <link rel="alternate" type="application/rss+xml" href="/old-feed/"> -->'
+			. '<link rel="alternate" type="application/rss+xml" href="/feed/">'
+			. '</head><body></body></html>';
+
+		$this->mock_response( 'https://example.com/', $html );
+
+		$urls = wp_list_pluck( $this->source->discover( 'https://example.com/' ), 'url' );
+
+		$this->assertSame( array( 'https://example.com/feed/' ), $urls );
+	}
+
+	/**
 	 * Scenario: tie-break level 2 — when path depth ties, WordPress's
 	 * default "{Site Name} » Feed" title convention wins over a title
 	 * carrying "Comments".
@@ -798,6 +833,21 @@ XML;
 				),
 			)
 		);
+
+		$this->mock_response( 'https://example.com/', $html );
+
+		$this->assertSame(
+			'https://example.com/assets/icon.png',
+			$this->source->get_favicon_url( 'https://example.com/' )
+		);
+	}
+
+	/**
+	 * Scenario: the icon link is written without quotes around its
+	 * attribute values. It is still preferred over `/favicon.ico`.
+	 */
+	public function test_favicon_reads_unquoted_icon_link() {
+		$html = '<html><head><title>Example</title><link rel=icon href=/assets/icon.png></head><body></body></html>';
 
 		$this->mock_response( 'https://example.com/', $html );
 

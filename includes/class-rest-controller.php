@@ -235,6 +235,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'default'           => 0,
 						'sanitize_callback' => 'absint',
 					),
+					// Followed sites' posts only: the opposite of `mine`,
+					// which wins when both are set.
+					'following'       => array(
+						'type'              => 'boolean',
+						'default'           => false,
+						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
 					'bookmarked'      => array(
 						'type'              => 'boolean',
 						'default'           => false,
@@ -2115,7 +2122,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * current user's bookmarked post IDs via `post__in` — see
 	 * Daymark_Bookmarks; backs Explore's "Bookmarks" section and Search's
 	 * own bookmarked filter). If both `mine` and `subscription_id` are set,
-	 * `mine` wins and `subscription_id` is ignored.
+	 * `mine` wins and `subscription_id` is ignored. `following` is the
+	 * opposite of `mine`: followed sites' posts only, with the site's own
+	 * posts skipped entirely (the "what have my friends been up to" list an
+	 * agent asks for; see Daymark_Abilities). `mine` and `on_this_day` both
+	 * win over it.
 	 *
 	 * Two more optional filter params, the Search date filter (issue #293):
 	 * `after`/`before` (an inclusive publication datetime window, REST format
@@ -2152,6 +2163,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$type            = sanitize_key( (string) $request->get_param( 'type' ) );
 		$mine            = rest_sanitize_boolean( $request->get_param( 'mine' ) );
 		$subscription_id = absint( $request->get_param( 'subscription_id' ) );
+		$following       = rest_sanitize_boolean( $request->get_param( 'following' ) );
 		$bookmarked      = rest_sanitize_boolean( $request->get_param( 'bookmarked' ) );
 
 		// Search's tag and place shortcuts (issue #269). Only the site's
@@ -2211,7 +2223,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		// construction) force the same skip — structurally, a subscription
 		// post can never match it, so querying that side would only ever
 		// return noise.
-		$include_marks              = $mine || 0 === $subscription_id || $on_this_day;
+		// `following` skips the site's own posts the same way, unless one
+		// of those two asks for them.
+		$include_marks              = $mine || $on_this_day || ( 0 === $subscription_id && ! $following );
 		$include_subscription_posts = ! $mine && ! $on_this_day && ! $own_posts_only;
 
 		$want_total = rest_sanitize_boolean( $request->get_param( 'count' ) );
@@ -3678,6 +3692,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			false,
 			array( 'daymark-checkin-map', 'daymark-checkin-map__pin' )
 		);
+
+		// Core's own filter above only makes an image lazy when it has a
+		// width and a height, so one without them (a pasted-in picture from
+		// another site) is covered here. Done before the gallery and embed
+		// markup goes back in: those are built by Daymark, not by the post.
+		$content = Daymark_Subscription_Poller::lazy_load_images( $content );
 
 		if ( ! empty( $gallery_slots ) ) {
 			$content = (string) preg_replace_callback(
@@ -5219,7 +5239,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// (not only when the poller stores it) so a body cached before
 				// that stripping existed can't still reach the app shell with
 				// a remote site's own CSS in it.
-				'body_content' => Daymark_Subscription_Poller::strip_untrusted_presentation( (string) get_post_meta( $id, 'body_content', true ) ),
+				// Its images are marked lazy here, on the way out, so a body
+				// cached before that existed gets it too.
+				'body_content' => Daymark_Subscription_Poller::lazy_load_images(
+					Daymark_Subscription_Poller::strip_untrusted_presentation( (string) get_post_meta( $id, 'body_content', true ) )
+				),
 			)
 		);
 
@@ -6163,7 +6187,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @param int $post_id Mark post ID.
 	 * @return array<string, mixed>
 	 */
-	private function prepare_mark_summary( int $post_id ): array {
+	public function prepare_mark_summary( int $post_id ): array {
 		$author_id = (int) get_post_field( 'post_author', $post_id );
 		$reactions = Daymark_Backflow_Sync::reaction_totals( $post_id );
 

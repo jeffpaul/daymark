@@ -25,12 +25,16 @@ can't act on them.
 - The New Mark button in the bottom bar now shows "New Mark" when you hover over it with a mouse, the same way the Timeline, Explore, Notifications and Me tabs show their names. ([#634](https://github.com/jeffpaul/daymark/pull/634))
 - The Bookmarks button on Explore now shows how many posts you have saved, in a small bubble on its corner, so you can tell at a glance there is something to come back to. With nothing saved, it shows nothing. ([#636](https://github.com/jeffpaul/daymark/pull/636))
 - You can try Daymark before installing it: the Live Preview button on its wordpress.org page opens a throwaway site in your browser, with sample Marks already posted and four sites already followed. ([#633](https://github.com/jeffpaul/daymark/pull/633))
+- An AI agent you connect to your site can now use Daymark for you. You can ask it to post a Mark (saved as a draft unless you ask it to publish), catch you up on what the sites you follow have posted, tell you who responded to your Marks, or follow a site. It works through WordPress's Abilities API, with your own sign-in, and can do no more than you can. ([#643](https://github.com/jeffpaul/daymark/pull/643))
+- Daymark now uses more of a bigger screen. On an iPad, in a laptop or desktop window, and on an open iPhone Duo, the tabs move from the bottom bar to a rail down the side with their names under the icons, and the column of posts is wider. A phone turned sideways gets a slimmer rail too, so the tabs stop taking height from a short screen. A phone held upright looks the same as before. ([#641](https://github.com/jeffpaul/daymark/pull/641))
 
 ### Changed
 
 - Settings -> Daymark -> General now has one "Save changes" button at the bottom, in place of a Save button in each of its eight sections. One press saves everything on the page, so a change in one section is no longer lost by pressing Save in another. ([#635](https://github.com/jeffpaul/daymark/pull/635))
 - The font setting in Settings -> Daymark -> General now lists every font in your site's Font Library, both the ones you added and the ones your theme brings. Pick one and the Daymark app shows its text in it. ([#638](https://github.com/jeffpaul/daymark/pull/638))
 - On Explore, Look back now sits just above the People row, so your own memories are the first thing under the search box (and under your recent searches, when you have any) without scrolling past People and Your tags. ([#637](https://github.com/jeffpaul/daymark/pull/637))
+- Pictures on Timeline, Search and Bookmarks cards, and pictures inside a post you open, now load as you scroll toward them instead of all at once, so a long feed opens faster and uses less mobile data. They start loading about three screens ahead of where you are, and the next page of the Timeline is fetched before you reach the end, so scrolling stays smooth. ([#644](https://github.com/jeffpaul/daymark/pull/644))
+- Pictures from the WordPress sites you follow now load at a size that fits your screen instead of the full-size original. A photo straight off a camera took over 100 MB of memory to show on one card, enough for a few of them to slow a phone or a laptop down. Posts already on your Timeline keep the picture they have. ([#648](https://github.com/jeffpaul/daymark/pull/648))
 
 ### Removed
 
@@ -38,7 +42,9 @@ can't act on them.
 
 ### Fixed
 
+- On WordPress 7.2, which redesigns the block editor's Post sidebar, "Set featured content" and the Note length row now look like the controls around them again: the button gets the same dashed blue outline as "Set featured image", and the row gets the same grey label and bold value as Status and Format. Nothing changes on WordPress 7.0 or 7.1. ([#647](https://github.com/jeffpaul/daymark/pull/647))
 - Daymark's page on wordpress.org no longer cuts off its description and its changelog. Both were longer than wordpress.org shows, so the list of outside services stopped partway through and the changelog stopped inside an older release. The details of what your site sends to sites you follow now sit in the FAQ, and the changelog lists the three most recent releases. ([#630](https://github.com/jeffpaul/daymark/pull/630))
+- Following a site now finds its feed when the page writes its feed link without quotes, as many speed-optimized sites do. Before, Daymark could miss it. A feed link the site has commented out is no longer offered. ([#644](https://github.com/jeffpaul/daymark/pull/644))
 
 ### Developer
 

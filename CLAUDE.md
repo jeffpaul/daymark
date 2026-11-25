@@ -316,6 +316,23 @@ do_action('daymark_import_responses', $post_id, $network_id);  // backflow trigg
 | POST | `/daymark/v1/push/test` | Yes — edit_posts + nonce (sends a test push to the current user's devices; `ACTION_PUSH_TEST` rate limit) |
 | GET/POST | `/daymark/v1/websub/{subscription_id}` | **No** — a WebSub hub calls this, not a Daymark user; see the WebSub decision above for what actually authorizes each method (a pending/topic match plus the callback token for GET, an HMAC signature for POST) |
 
+## Abilities (for AI agents)
+
+Registered with the WordPress Abilities API by `Daymark_Abilities`, in the
+`daymark` category. An agent can't use the REST routes above (each needs the
+app's nonce), so these are its way in: over `/wp-json/wp-abilities/v1/` with
+an application password, or through the MCP Adapter plugin. Each runs the
+same handler as the app's own route, as the signed-in user. See the
+"Abilities for agents" decision before adding or changing one.
+
+| Ability | What a person asks | Capability | Changes anything? |
+|---------|--------------------|------------|-------------------|
+| `daymark/create-mark` | "Post this to my site." A text Mark, a draft unless `status` is `publish` or a `publish_at` time is given | edit_posts (publishing still needs publish_posts) | Yes |
+| `daymark/get-timeline` | "What have my friends been up to?" One page of the Timeline; `from` is `all`, `me` or `following` | edit_posts | No |
+| `daymark/get-post` | One Timeline post's full text, as plain text | edit_posts | No (a followed post not saved in full is fetched and cached, as in the app) |
+| `daymark/get-notifications` | "Did anyone respond?" Replies, likes, reblogs and mentions; never marks them seen | edit_posts | No |
+| `daymark/follow-site` | "Follow this site for me." | edit_posts + manage_options | Yes |
+
 ## Security checklist (apply to every endpoint and form handler)
 
 - [ ] `current_user_can()` before any write

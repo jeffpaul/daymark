@@ -79,6 +79,14 @@ class Daymark_Note_Length {
 		wp_set_script_translations( self::HANDLE, 'daymark' );
 
 		wp_localize_script( self::HANDLE, 'daymarkNoteLength', self::app_config() );
+
+		// Matches the row to the Post sidebar's own rows on WordPress 7.2.
+		wp_enqueue_style(
+			self::HANDLE,
+			DAYMARK_PLUGIN_URL . 'assets/note-length-editor.css',
+			array(),
+			DAYMARK_VERSION
+		);
 	}
 
 	/**

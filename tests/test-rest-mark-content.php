@@ -71,6 +71,19 @@ class Test_Rest_Mark_Content extends WP_UnitTestCase {
 		return (int) self::factory()->attachment->create_upload_object( __DIR__ . '/e2e/fixtures/test-image.png', $post_id );
 	}
 
+	/** Pictures in a post's own content come back marked to load only as they near the screen. */
+	public function test_content_images_are_served_lazy() {
+		$post_id = $this->published_post(
+			'<p>One</p><figure class="wp-block-image"><img src="https://example.org/a.jpg" alt=""></figure>'
+			. '<p>Two</p><figure class="wp-block-image"><img src="https://example.org/b.jpg" alt=""></figure>'
+		);
+
+		$content = rest_do_request( $this->request_for( $post_id ) )->get_data()['content'];
+
+		$this->assertSame( 2, substr_count( $content, 'loading="lazy"' ), 'Every image is lazy' );
+		$this->assertSame( 2, substr_count( $content, 'decoding="async"' ), 'Every image decodes asynchronously' );
+	}
+
 	/** A post with no Featured Content and no featured image has nothing to show above its body. */
 	public function test_featured_is_empty_with_nothing_set() {
 		$data = rest_do_request( $this->request_for( $this->published_post() ) )->get_data();
