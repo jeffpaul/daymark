@@ -490,9 +490,8 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 	 * @return string Absolute REST root URL, or '' if not found.
 	 */
 	private function find_rest_root( string $html, string $site_url ): string {
-		foreach ( $this->extract_tags( $this->extract_head_section( $html ), 'link' ) as $tag ) {
-			$attrs = $this->parse_tag_attributes( $tag );
-			$rel   = strtolower( trim( (string) ( $attrs['rel'] ?? '' ) ) );
+		foreach ( Daymark_Subscription_Link_Tags::read( $this->extract_head_section( $html ) ) as $attrs ) {
+			$rel = strtolower( trim( (string) ( $attrs['rel'] ?? '' ) ) );
 
 			if ( 'https://api.w.org/' !== $rel ) {
 				continue;
@@ -600,58 +599,6 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 		}
 
 		return $body;
-	}
-
-	/**
-	 * Find every occurrence of a given tag (opening tag only) in an HTML
-	 * fragment. Deliberately mirrors
-	 * Daymark_Subscription_Source_Feed::extract_tags() — a lightweight
-	 * regex scan, not DOMDocument.
-	 *
-	 * @param string $section  HTML fragment to search.
-	 * @param string $tag_name Tag name, e.g. 'link'.
-	 * @return string[] Matched tags, in document order.
-	 */
-	private function extract_tags( string $section, string $tag_name ): array {
-		if ( ! preg_match_all( '#<' . preg_quote( $tag_name, '#' ) . '\b[^>]*>#i', $section, $matches ) ) {
-			return array();
-		}
-
-		return $matches[0];
-	}
-
-	/**
-	 * Parse a single tag's attributes into a lowercase-keyed array.
-	 * Deliberately mirrors
-	 * Daymark_Subscription_Source_Feed::parse_tag_attributes() — a
-	 * lightweight regex parser, not DOMDocument.
-	 *
-	 * @param string $tag Raw tag markup, e.g. `<link rel="..." href="...">`.
-	 * @return array<string, string>
-	 */
-	private function parse_tag_attributes( string $tag ): array {
-		$attrs = array();
-
-		if (
-			! preg_match_all(
-				'/([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*"([^"]*)"|([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*\'([^\']*)\'/',
-				$tag,
-				$matches,
-				PREG_SET_ORDER
-			)
-		) {
-			return $attrs;
-		}
-
-		foreach ( $matches as $match ) {
-			if ( isset( $match[1] ) && '' !== $match[1] ) {
-				$attrs[ strtolower( $match[1] ) ] = html_entity_decode( $match[2], ENT_QUOTES );
-			} elseif ( isset( $match[3] ) && '' !== $match[3] ) {
-				$attrs[ strtolower( $match[3] ) ] = html_entity_decode( $match[4], ENT_QUOTES );
-			}
-		}
-
-		return $attrs;
 	}
 
 	/**

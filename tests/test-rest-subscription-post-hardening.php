@@ -173,6 +173,40 @@ class Test_Rest_Subscription_Post_Hardening extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A followed post's pictures come back marked to load only as they
+	 * near the screen, and to decode off the main thread.
+	 */
+	public function test_body_images_are_served_lazy() {
+		$post_id = $this->create_full_subscription_post(
+			'<p>One</p><img src="https://example.com/a.jpg" width="10"><p>Two</p><img src="https://example.com/b.jpg">'
+		);
+
+		wp_set_current_user( $this->author );
+
+		$response = rest_do_request( $this->request_for( 'GET', $post_id, '' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+
+		$body = $response->get_data()['body_content'];
+		$this->assertSame( 2, substr_count( $body, 'loading="lazy"' ), 'Every image is lazy' );
+		$this->assertSame( 2, substr_count( $body, 'decoding="async"' ), 'Every image decodes asynchronously' );
+		$this->assertStringContainsString( 'width="10"', $body, 'Other attributes are kept' );
+	}
+
+	/**
+	 * What the followed site chose for an image is left alone, and markup
+	 * with no image comes back unchanged.
+	 */
+	public function test_lazy_load_images_keeps_a_sites_own_choice() {
+		$this->assertSame(
+			'<img src="a.jpg" loading="eager" decoding="sync">',
+			Daymark_Subscription_Poller::lazy_load_images( '<img src="a.jpg" loading="eager" decoding="sync">' )
+		);
+		$this->assertSame( '<p>No pictures</p>', Daymark_Subscription_Poller::lazy_load_images( '<p>No pictures</p>' ) );
+		$this->assertSame( '', Daymark_Subscription_Poller::lazy_load_images( '' ) );
+	}
+
+	/**
 	 * A remote page borrowing Daymark's own overlay classes is neutralized in
 	 * a previously cached body too; unrelated classes survive.
 	 */

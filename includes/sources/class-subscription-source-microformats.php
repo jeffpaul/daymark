@@ -22,11 +22,11 @@
  *
  * A deliberately minimal, purpose-built mf2 subset parser — not the full
  * mf2 vocabulary or spec-complete implied-property rules, and not a
- * DOMDocument-based implementation. It reuses the same lightweight,
- * regex-based tag scanning approach Daymark_Subscription_Source_Feed already
- * uses for `<link>` autodiscovery, extended here to track tag nesting well
- * enough to bound each h-entry (and each property within it) to its own
- * matching closing tag.
+ * DOMDocument-based implementation. It is a lightweight, regex-based tag
+ * scanner that tracks tag nesting well enough to bound each h-entry (and
+ * each property within it) to its own matching closing tag. (Reading the
+ * page's `<link>` tags is the one part that is not regex: that goes
+ * through Daymark_Subscription_Link_Tags, like the other sources.)
  *
  * Structured JSON preferred when discoverable (issue #343): a site running
  * the MF2 Feed WordPress plugin (or any other producer of the same
@@ -540,24 +540,20 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 	 * @return string Absolute, sanitized JSON feed URL, or '' if none is advertised.
 	 */
 	private function find_json_feed_link( string $html, string $base_url ): string {
-		if ( ! preg_match_all( '#<link\b[^>]*>#i', $html, $tags ) ) {
-			return '';
-		}
-
-		foreach ( $tags[0] as $tag ) {
-			$rel = strtolower( $this->get_attribute_value( $tag, 'rel' ) );
+		foreach ( Daymark_Subscription_Link_Tags::read( $html ) as $attrs ) {
+			$rel = strtolower( (string) ( $attrs['rel'] ?? '' ) );
 
 			if ( ! in_array( 'alternate', preg_split( '/\s+/', trim( $rel ) ), true ) ) {
 				continue;
 			}
 
-			$type = strtolower( $this->get_attribute_value( $tag, 'type' ) );
+			$type = strtolower( (string) ( $attrs['type'] ?? '' ) );
 
 			if ( 'application/mf2+json' !== $type ) {
 				continue;
 			}
 
-			$href = $this->get_attribute_value( $tag, 'href' );
+			$href = (string) ( $attrs['href'] ?? '' );
 
 			if ( '' === $href ) {
 				continue;
@@ -1137,10 +1133,8 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 	 * h-entry is never picked up for the outer entry, and a nested h-entry
 	 * (e.g. a quoted repost) is never counted as a separate top-level entry.
 	 *
-	 * A deliberately simple, regex-based tag-depth scanner — matching the
-	 * lightweight, DOMDocument-free approach Daymark_Subscription_Source_Feed
-	 * already uses for `<link>` autodiscovery — not a spec-complete HTML
-	 * parser. Untrusted external HTML from a subscribed site; a malformed or
+	 * A deliberately simple, regex-based tag-depth scanner, not a
+	 * spec-complete HTML parser. Untrusted external HTML from a subscribed site; a malformed or
 	 * pathological document degrades to "fewer/no matches found" rather than
 	 * a fatal, since parsing is exception-guarded.
 	 *
@@ -1285,9 +1279,9 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 	/**
 	 * Extract one named attribute's value from a tag's raw attribute text.
 	 *
-	 * Deliberately a lightweight regex parser rather than DOMDocument,
-	 * matching Daymark_Subscription_Source_Feed::parse_tag_attributes()'s own
-	 * documented reasoning for the same choice.
+	 * Deliberately a lightweight regex parser rather than DOMDocument, to
+	 * go with the regex tag scanner above that hands it this raw text. It
+	 * only reads a value written inside quotes.
 	 *
 	 * @param string $attrs Raw attribute text captured after the tag name.
 	 * @param string $name  Attribute name, e.g. 'class', 'href', 'datetime'.

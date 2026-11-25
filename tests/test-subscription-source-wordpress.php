@@ -101,6 +101,19 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 		$this->assertSame( 'Jane', $result[0]['title'] );
 	}
 
+	/** discover() reads a REST API link written without quotes around its attribute values. */
+	public function test_discover_reads_unquoted_rest_link() {
+		$html = '<html><head><title>Jane</title><link rel=https://api.w.org/ href=https://jane.example/wp-json/></head><body></body></html>';
+
+		$this->mock_response( 'https://jane.example/', $html );
+		$this->mock_response( 'https://jane.example/wp-json/wp/v2/posts', '[]' );
+
+		$result = $this->source->discover( 'https://jane.example/' );
+
+		$this->assertCount( 1, $result );
+		$this->assertSame( 'https://jane.example/wp-json/wp/v2/posts', $result[0]['url'] );
+	}
+
 	/** discover() finds nothing when the site advertises no REST API link at all. */
 	public function test_discover_finds_nothing_without_rest_link() {
 		$this->mock_response( 'https://plain.example/', '<html><head><title>Plain</title></head><body></body></html>' );
