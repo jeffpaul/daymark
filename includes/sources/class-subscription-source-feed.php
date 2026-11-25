@@ -205,9 +205,8 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	private function discover_language_alternates( string $html, string $site_url ): array {
 		$alternates = array();
 
-		foreach ( $this->extract_tags( $this->extract_head_section( $html ), 'link' ) as $tag ) {
-			$attrs = $this->parse_tag_attributes( $tag );
-			$rel   = strtolower( (string) ( $attrs['rel'] ?? '' ) );
+		foreach ( Daymark_Subscription_Link_Tags::read( $this->extract_head_section( $html ) ) as $attrs ) {
+			$rel = strtolower( (string) ( $attrs['rel'] ?? '' ) );
 
 			if ( ! in_array( 'alternate', preg_split( '/\s+/', $rel ), true ) ) {
 				continue;
@@ -798,10 +797,9 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	private function find_feed_links( string $html, string $site_url ): array {
 		$candidates = array();
 
-		foreach ( $this->extract_tags( $this->extract_head_section( $html ), 'link' ) as $tag ) {
-			$attrs = $this->parse_tag_attributes( $tag );
-			$rel   = strtolower( (string) ( $attrs['rel'] ?? '' ) );
-			$type  = strtolower( (string) ( $attrs['type'] ?? '' ) );
+		foreach ( Daymark_Subscription_Link_Tags::read( $this->extract_head_section( $html ) ) as $attrs ) {
+			$rel  = strtolower( (string) ( $attrs['rel'] ?? '' ) );
+			$type = strtolower( (string) ( $attrs['type'] ?? '' ) );
 
 			if ( ! in_array( 'alternate', preg_split( '/\s+/', $rel ), true ) ) {
 				continue;
@@ -835,9 +833,8 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	 * @return string Icon URL, or '' if none is found.
 	 */
 	private function find_icon_link( string $html, string $site_url ): string {
-		foreach ( $this->extract_tags( $this->extract_head_section( $html ), 'link' ) as $tag ) {
-			$attrs = $this->parse_tag_attributes( $tag );
-			$rel   = strtolower( (string) ( $attrs['rel'] ?? '' ) );
+		foreach ( Daymark_Subscription_Link_Tags::read( $this->extract_head_section( $html ) ) as $attrs ) {
+			$rel = strtolower( (string) ( $attrs['rel'] ?? '' ) );
 
 			if ( ! in_array( 'icon', preg_split( '/\s+/', $rel ), true ) ) {
 				continue;
@@ -1001,57 +998,6 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 		}
 
 		return $html;
-	}
-
-	/**
-	 * Extract every occurrence of a given tag (opening tag only, e.g.
-	 * `<link ...>`) from an HTML fragment.
-	 *
-	 * @param string $section    HTML fragment to search.
-	 * @param string $tag_name   Tag name, e.g. 'link'.
-	 * @return string[] Matched tags, in document order.
-	 */
-	private function extract_tags( string $section, string $tag_name ): array {
-		if ( ! preg_match_all( '#<' . preg_quote( $tag_name, '#' ) . '\b[^>]*>#i', $section, $matches ) ) {
-			return array();
-		}
-
-		return $matches[0];
-	}
-
-	/**
-	 * Parse a single tag's attributes into a lowercase-keyed array.
-	 *
-	 * Deliberately a lightweight regex parser rather than DOMDocument: this
-	 * only ever needs to read `<link>` attributes out of a `<head>`
-	 * fragment, and avoids taking on a hard dependency on the DOM extension.
-	 *
-	 * @param string $tag Raw tag markup, e.g. `<link rel="alternate" ...>`.
-	 * @return array<string, string>
-	 */
-	private function parse_tag_attributes( string $tag ): array {
-		$attrs = array();
-
-		if (
-			! preg_match_all(
-				'/([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*"([^"]*)"|([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*\'([^\']*)\'/',
-				$tag,
-				$matches,
-				PREG_SET_ORDER
-			)
-		) {
-			return $attrs;
-		}
-
-		foreach ( $matches as $match ) {
-			if ( isset( $match[1] ) && '' !== $match[1] ) {
-				$attrs[ strtolower( $match[1] ) ] = html_entity_decode( $match[2], ENT_QUOTES );
-			} elseif ( isset( $match[3] ) && '' !== $match[3] ) {
-				$attrs[ strtolower( $match[3] ) ] = html_entity_decode( $match[4], ENT_QUOTES );
-			}
-		}
-
-		return $attrs;
 	}
 
 	/**

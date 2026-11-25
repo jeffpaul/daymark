@@ -2,7 +2,7 @@ name: PR Playground Preview
 
 # Adds a "Preview in WordPress Playground" button to the PR as a managed
 # comment. No build step needed — the plugin is plain PHP/JS, so the
-# blueprint installs it straight from the PR branch via git:directory.
+# blueprint installs it from GitHub's own zip of the PR branch.
 #
 # Why a comment and not the PR description: this repo squash-merges using
 # the PR title + description as the commit message (so Co-authored-by
@@ -28,6 +28,15 @@ name: PR Playground Preview
 # contributor's fork) is PUBLIC and the branch still exists. On a private
 # repo, or once a fork's branch is deleted, the instance cannot load the
 # plugin.
+#
+# Why the zip and not the whole branch through git:directory: the zip is
+# what `git archive` makes, so it honours .gitattributes' export-ignore and
+# carries only what ships (about 6 MB in 2026-11). The branch itself is
+# 48 MB, two thirds of it the before/after pictures in
+# .github/pr-media/, and it grows with every UI pull request. Playground
+# holds each installed file in the reviewer's browser memory, and fetching
+# 1,200 files one object at a time took the preview 77 seconds to come up
+# against 28 with the zip (measured in Chromium, 2026-11-25).
 on:
   pull_request_target:
     # `synchronize` is included even though the blueprint's own content
@@ -74,12 +83,14 @@ jobs:
           //
           // runPHP steps don't auto-bootstrap WordPress — require wp-load.php
           // first, same as Playground's own documented examples. By this
-          // point the preceding installPlugin step has already activated
-          // Daymark from the PR's branch, so the script (and the sample
-          // photos next to it) is in the plugin's own folder and nothing is
-          // fetched or generated at run time. A branch that predates the
-          // script comes up without demo content until `main` is merged
-          // into it.
+          // point Daymark is active from the PR's branch, and the step
+          // before this one has copied the branch's .github/blueprints/
+          // folder (the script and the sample photos next to it) into
+          // wp-content/daymark-demo/, because the zip the plugin is
+          // installed from leaves .github/ out. That is the same place, and
+          // the same PHP, as the Live Preview blueprint. A branch that
+          // predates the script comes up without demo content until `main`
+          // is merged into it.
           //
           // Built as a joined array (not a multi-line template literal) so
           // every line of source here stays indented inside this run: |
@@ -89,14 +100,16 @@ jobs:
             '<?php',
             "require_once '/wordpress/wp-load.php';",
             '',
-            "if ( defined( 'DAYMARK_PLUGIN_FILE' ) ) {",
-            "\t$demo = dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/set-up-demo.php';",
-            '\tif ( file_exists( $demo ) ) {',
-            '\t\trequire $demo;',
-            '\t}',
+            "$demo = WP_CONTENT_DIR . '/daymark-demo/set-up-demo.php';",
+            'if ( file_exists( $demo ) ) {',
+            '\trequire $demo;',
             '}',
             '',
           ].join('\n');
+
+          // A branch name can hold characters a URL cannot (and slashes,
+          // which stay as they are).
+          const zipUrl = `${repoUrl}/archive/refs/heads/${ref.split('/').map(encodeURIComponent).join('/')}.zip`;
 
           const blueprint = {
             preferredVersions: {
@@ -132,15 +145,28 @@ jobs:
                 },
               },
               {
+                // GitHub's zip unpacks to a folder named after the branch;
+                // the plugin belongs in `daymark`, as on a real site.
                 step: 'installPlugin',
                 pluginData: {
-                  resource: 'git:directory',
-                  url: repoUrl,
-                  ref,
-                  path: '/',
+                  resource: 'url',
+                  url: zipUrl,
                 },
                 options: {
                   activate: true,
+                  targetFolderName: 'daymark',
+                },
+              },
+              {
+                // The demo script and its sample photos, which the zip
+                // leaves out. Only this one small folder is fetched.
+                step: 'writeFiles',
+                writeToPath: '/wordpress/wp-content/daymark-demo',
+                filesTree: {
+                  resource: 'git:directory',
+                  url: repoUrl,
+                  ref,
+                  path: '.github/blueprints',
                 },
               },
               {

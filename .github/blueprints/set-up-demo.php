@@ -11,8 +11,9 @@
  *   (`.github/workflows/pr-playground-preview.yml`).
  *
  * Change what a preview shows here, not in those two files. They only
- * differ in which copy of Daymark they install and where this folder ends up
- * on the preview site.
+ * differ in which copy of Daymark they install. Both copy this folder to
+ * `wp-content/daymark-demo/` on the preview site, because neither the
+ * released plugin nor the zip of a branch carries `.github/`.
  *
  * The blueprint runs this file from `main` against the last *released*
  * Daymark, which may be older. Keep to calls that release has.

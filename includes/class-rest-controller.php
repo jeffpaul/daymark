@@ -3693,6 +3693,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array( 'daymark-checkin-map', 'daymark-checkin-map__pin' )
 		);
 
+		// Core's own filter above only makes an image lazy when it has a
+		// width and a height, so one without them (a pasted-in picture from
+		// another site) is covered here. Done before the gallery and embed
+		// markup goes back in: those are built by Daymark, not by the post.
+		$content = Daymark_Subscription_Poller::lazy_load_images( $content );
+
 		if ( ! empty( $gallery_slots ) ) {
 			$content = (string) preg_replace_callback(
 				'#<p>\s*' . preg_quote( $slot_token, '#' ) . '(\d+)\s*</p>#',
@@ -5233,7 +5239,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// (not only when the poller stores it) so a body cached before
 				// that stripping existed can't still reach the app shell with
 				// a remote site's own CSS in it.
-				'body_content' => Daymark_Subscription_Poller::strip_untrusted_presentation( (string) get_post_meta( $id, 'body_content', true ) ),
+				// Its images are marked lazy here, on the way out, so a body
+				// cached before that existed gets it too.
+				'body_content' => Daymark_Subscription_Poller::lazy_load_images(
+					Daymark_Subscription_Poller::strip_untrusted_presentation( (string) get_post_meta( $id, 'body_content', true ) )
+				),
 			)
 		);
 

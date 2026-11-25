@@ -913,6 +913,40 @@ class Daymark_Subscription_Poller {
 	}
 
 	/**
+	 * Mark every image in a post's content to load only as it nears the
+	 * screen (`loading="lazy"`) and to decode off the main thread
+	 * (`decoding="async"`), so opening a long post in the app doesn't fetch
+	 * every picture in it at once.
+	 *
+	 * WordPress core does this for a site's own pages, but only for an image
+	 * with a width and a height, and a followed site's content never goes
+	 * through that. An attribute the content already carries is left as it
+	 * is: the site that wrote it chose it.
+	 *
+	 * @param string $html HTML fragment, already sanitized.
+	 * @return string The same HTML with the two attributes added where missing.
+	 */
+	public static function lazy_load_images( string $html ): string {
+		if ( '' === $html ) {
+			return $html;
+		}
+
+		$processor = new WP_HTML_Tag_Processor( $html );
+
+		while ( $processor->next_tag( 'img' ) ) {
+			if ( null === $processor->get_attribute( 'loading' ) ) {
+				$processor->set_attribute( 'loading', 'lazy' );
+			}
+
+			if ( null === $processor->get_attribute( 'decoding' ) ) {
+				$processor->set_attribute( 'decoding', 'async' );
+			}
+		}
+
+		return $processor->get_updated_html();
+	}
+
+	/**
 	 * Narrow a fetched page down to just its likely article markup before
 	 * wp_kses_post() sanitizes it — the click-through sheet's whole point is
 	 * showing the post someone tapped into, not the rest of its page's
@@ -924,8 +958,7 @@ class Daymark_Subscription_Poller {
 	 * blocks anywhere in the document, and a theme's own nav/header/footer/
 	 * comments markup around the actual post) would otherwise surface all
 	 * of that as visible content. This does four bounded, regex-based
-	 * passes (matching this codebase's existing choice, in
-	 * Daymark_Subscription_Source_Feed, to avoid a hard DOMDocument
+	 * passes (this codebase's existing choice, to avoid a hard DOMDocument
 	 * dependency rather than reach for full Readability-style article
 	 * extraction, which is real, separate work — see the mf2 h-entry
 	 * connector tracked in issue #84):

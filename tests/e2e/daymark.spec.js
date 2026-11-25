@@ -2510,6 +2510,82 @@ test('Timeline cards: image Mark gets the media-dominant layout, Note Mark stays
 	await expect(noteCard.locator('.daymark-recent__thumbwrap--media')).toHaveCount(0);
 });
 
+// A card's picture is drawn lazy, so a long Timeline doesn't fetch a whole
+// page of photos at once. The app's own lookahead (next test) switches a
+// picture to load once it is near, so this test turns that off to see the
+// card as it is drawn, and to check the browser alone still loads a
+// picture that is on screen.
+test('Timeline cards: a card picture is drawn lazy, and loads on screen without the lookahead', async ({
+	page,
+}) => {
+	const caption = `E2E lazy card ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await openComposer(page, 'image');
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
+	await describePhoto(page, `E2E alt ${RUN_ID}`);
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="publish"]').click();
+	await expectPublished(page);
+
+	// watchLazyPictures() in app.js does nothing without a MutationObserver.
+	await page.addInitScript(() => {
+		delete window.MutationObserver;
+	});
+	await page.goto('/daymark');
+
+	const thumb = page
+		.locator('.daymark-recent__item-wrap')
+		.filter({ hasText: caption })
+		.locator('.daymark-recent__thumbwrap--media .daymark-recent__thumb');
+	await expect(thumb).toHaveAttribute('loading', 'lazy');
+	await expect(thumb).toHaveAttribute('decoding', 'async');
+	await thumb.scrollIntoViewIfNeeded();
+	await expect.poll(() => thumb.evaluate((img) => img.complete && img.naturalWidth > 0)).toBe(true);
+	await expect(thumb).toHaveAttribute('loading', 'lazy');
+});
+
+// How close a lazy picture must be before it loads is the browser's own
+// choice, and some wait until it is almost on screen, so it pops in late
+// while you scroll. The app starts each one itself about three screens
+// ahead: a picture two screens below the screen is switched to load now,
+// one eight screens below is left until the scroll gets near it.
+test('lazy pictures start loading about three screens ahead of the scroll', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark/me');
+	await expect(page.locator('.daymark-screen').first()).toBeVisible();
+
+	await page.evaluate(() => {
+		[2, 8].forEach((screensBelow) => {
+			const img = document.createElement('img');
+			img.setAttribute('loading', 'lazy');
+			img.alt = '';
+			img.width = 10;
+			img.height = 10;
+			img.dataset.testScreensBelow = String(screensBelow);
+			img.style.cssText = `position:absolute;inset-inline-start:0;top:${Math.round(
+				window.scrollY + window.innerHeight * (1 + screensBelow)
+			)}px`;
+			img.src = `${window.daymarkApp.daymarkIconUrl}?ahead=${screensBelow}`;
+			document.body.appendChild(img);
+		});
+	});
+
+	const near = page.locator('img[data-test-screens-below="2"]');
+	const far = page.locator('img[data-test-screens-below="8"]');
+	await expect(near).toHaveAttribute('loading', 'eager');
+	await expect.poll(() => near.evaluate((img) => img.complete && img.naturalWidth > 0)).toBe(true);
+	await expect(far).toHaveAttribute('loading', 'lazy');
+
+	// Scroll until the far picture is two screens below the screen.
+	await far.evaluate((img) => {
+		window.scrollTo(0, img.getBoundingClientRect().top + window.scrollY - window.innerHeight * 3);
+	});
+	await expect(far).toHaveAttribute('loading', 'eager');
+});
+
 // With no title typed, the site makes one from the caption's first words.
 // The card and the post view don't show that title above the caption it
 // repeats: they show the caption once (publishing audit R10). A typed title
@@ -3471,6 +3547,42 @@ test('infinite scroll appends more recent Marks as the sentinel enters view', as
 	await expect(page.locator('.daymark-bottomnav')).toBeVisible();
 });
 
+// The next page is asked for while the end of the list is still well
+// below the screen, so its cards and pictures are there by the time the
+// scroll arrives instead of showing up after a pause at the bottom.
+test('the Timeline asks for its next page before the scroll reaches the end', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	// Enough Marks that a second page exists.
+	await page.evaluate(async () => {
+		const config = window.daymarkApp;
+		for (let i = 1; i <= 22; i++) {
+			await fetch(`${config.restUrl}marks`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+				body: JSON.stringify({ caption: `Ahead seed ${i}`, primary_type: 'note' }),
+			});
+		}
+	});
+
+	// Start at the top, with one page loaded (see the Retry test below).
+	await markNewestTimelineItemSeen(page);
+
+	await page.goto('/daymark');
+	const rows = page.locator('[data-recent-list] .daymark-recent__item');
+	await expect(rows.first()).toBeVisible();
+
+	// Stop with the end of the list still a screen and a half below.
+	await page.locator('[data-recent-sentinel]').evaluate((sentinel) => {
+		const below = sentinel.getBoundingClientRect().top - window.innerHeight;
+		window.scrollBy(0, Math.max(0, below - window.innerHeight * 1.5));
+	});
+
+	await expect.poll(async () => rows.count(), { timeout: 6000 }).toBeGreaterThan(20);
+});
+
 // When the next page fails to load, the Timeline says so and offers Retry,
 // instead of stopping silently behind its end mark.
 test('a failed Timeline page shows Retry, and Retry loads it', async ({ page }) => {
@@ -3537,6 +3649,14 @@ test('search shows a result count and loads more past the first 20', async ({ pa
 		}
 	}, tag);
 
+	// Search asks for its next page when the end of the list is two screens
+	// below (NEXT_PAGE_LOOKAHEAD in app.js). Twenty short results are not
+	// much taller than that on a phone, so on a full-height screen the
+	// second page can arrive by itself before the checks below run. A short
+	// screen keeps the end of the first page well out of reach until the
+	// test scrolls to it.
+	await page.setViewportSize({ width: 390, height: 400 });
+
 	await page.goto('/daymark/search');
 	await page.fill('[data-search-input]', tag);
 	const results = page.locator('[data-search-results] .daymark-recent__item');
@@ -3587,7 +3707,7 @@ test('search: on the Explore tab, a query + type filter narrow the results', asy
 	// Search lives on the Explore tab: one tab, one icon.
 	await page.locator('.daymark-bottomnav__link', { hasText: 'Explore' }).evaluate((el) => el.click());
 	await expect(page).toHaveURL(/#explore$/);
-	await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveText('Explore');
+	await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveAttribute('title', 'Explore');
 	await expect(page.locator('h1', { hasText: 'Explore' })).toBeVisible();
 
 	const list = page.locator('[data-search-results]');
@@ -6143,7 +6263,7 @@ test('Explore, Notifications, and Me are directly linkable and survive a refresh
 	]) {
 		await page.goto(path);
 		await expect(page.locator('h1', { hasText: heading })).toBeVisible();
-		await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveText(heading);
+		await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveAttribute('title', heading);
 
 		await page.reload();
 		await expect(page.locator('h1', { hasText: heading })).toBeVisible();

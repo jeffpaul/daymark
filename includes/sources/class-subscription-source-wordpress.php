@@ -68,6 +68,16 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 	 */
 	private const DAYMARK_MEDIA_FORMATS = array( 'image', 'video', 'audio', 'gallery' );
 
+	/**
+	 * How wide a featured image needs to be for a card or the post view, in
+	 * pixels: enough for a phone screen at three device pixels to one. A
+	 * site's own copy at least this wide is used in place of the original
+	 * (see display_image_url()).
+	 *
+	 * @var int
+	 */
+	private const DISPLAY_IMAGE_WIDTH = 1024;
+
 
 	/**
 	 * Source ID.
@@ -261,7 +271,7 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 		$featured_image_url = '';
 
 		if ( isset( $raw_item['_embedded']['wp:featuredmedia'][0]['source_url'] ) ) {
-			$featured_image_url = esc_url_raw( (string) $raw_item['_embedded']['wp:featuredmedia'][0]['source_url'] );
+			$featured_image_url = esc_url_raw( self::display_image_url( (array) $raw_item['_embedded']['wp:featuredmedia'][0] ) );
 		}
 
 		// The real `format` field is only ever set when the site's theme
@@ -387,6 +397,59 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 	}
 
 	/**
+	 * The address of a featured image at a size fit for a screen.
+	 *
+	 * `source_url` is the file as it was uploaded, which for a photo straight
+	 * off a camera is often 6000 pixels wide: about 100 MB of memory once a
+	 * browser draws it, for a card under 400 pixels wide. A dozen of those
+	 * on the Timeline is over a gigabyte. WordPress already made smaller
+	 * copies and lists them next to the original, so this picks the smallest
+	 * one that is still at least DISPLAY_IMAGE_WIDTH wide.
+	 *
+	 * A copy cut to a different shape (a square thumbnail, a theme's banner
+	 * crop) is skipped, so the picture stays the one its author chose. With
+	 * no usable list, or none of its copies wide enough, the original is
+	 * returned, exactly as before.
+	 *
+	 * @param array<string, mixed> $media One embedded `wp:featuredmedia` item.
+	 * @return string
+	 */
+	private static function display_image_url( array $media ): string {
+		$original = (string) ( $media['source_url'] ?? '' );
+		$details  = is_array( $media['media_details'] ?? null ) ? $media['media_details'] : array();
+		$width    = (int) ( $details['width'] ?? 0 );
+		$height   = (int) ( $details['height'] ?? 0 );
+
+		if ( $width <= self::DISPLAY_IMAGE_WIDTH || $height <= 0 || ! is_array( $details['sizes'] ?? null ) ) {
+			return $original;
+		}
+
+		$best       = $original;
+		$best_width = $width;
+
+		foreach ( $details['sizes'] as $size ) {
+			$size_url    = is_array( $size ) ? (string) ( $size['source_url'] ?? '' ) : '';
+			$size_width  = is_array( $size ) ? (int) ( $size['width'] ?? 0 ) : 0;
+			$size_height = is_array( $size ) ? (int) ( $size['height'] ?? 0 ) : 0;
+
+			if ( '' === $size_url || $size_width < self::DISPLAY_IMAGE_WIDTH || $size_width >= $best_width || $size_height <= 0 ) {
+				continue;
+			}
+
+			// Same shape as the original, give or take the rounding
+			// WordPress does when it scales one down.
+			if ( abs( ( $size_width / $size_height ) - ( $width / $height ) ) > 0.02 ) {
+				continue;
+			}
+
+			$best       = $size_url;
+			$best_width = $size_width;
+		}
+
+		return $best;
+	}
+
+	/**
 	 * Overlay what another Daymark site says about its own post (the
 	 * `daymark` field, Daymark_Post_Export) on top of what normalize()
 	 * worked out from WordPress's own fields. The origin knows its Mark type,
@@ -490,9 +553,8 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 	 * @return string Absolute REST root URL, or '' if not found.
 	 */
 	private function find_rest_root( string $html, string $site_url ): string {
-		foreach ( $this->extract_tags( $this->extract_head_section( $html ), 'link' ) as $tag ) {
-			$attrs = $this->parse_tag_attributes( $tag );
-			$rel   = strtolower( trim( (string) ( $attrs['rel'] ?? '' ) ) );
+		foreach ( Daymark_Subscription_Link_Tags::read( $this->extract_head_section( $html ) ) as $attrs ) {
+			$rel = strtolower( trim( (string) ( $attrs['rel'] ?? '' ) ) );
 
 			if ( 'https://api.w.org/' !== $rel ) {
 				continue;
@@ -600,58 +662,6 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 		}
 
 		return $body;
-	}
-
-	/**
-	 * Find every occurrence of a given tag (opening tag only) in an HTML
-	 * fragment. Deliberately mirrors
-	 * Daymark_Subscription_Source_Feed::extract_tags() — a lightweight
-	 * regex scan, not DOMDocument.
-	 *
-	 * @param string $section  HTML fragment to search.
-	 * @param string $tag_name Tag name, e.g. 'link'.
-	 * @return string[] Matched tags, in document order.
-	 */
-	private function extract_tags( string $section, string $tag_name ): array {
-		if ( ! preg_match_all( '#<' . preg_quote( $tag_name, '#' ) . '\b[^>]*>#i', $section, $matches ) ) {
-			return array();
-		}
-
-		return $matches[0];
-	}
-
-	/**
-	 * Parse a single tag's attributes into a lowercase-keyed array.
-	 * Deliberately mirrors
-	 * Daymark_Subscription_Source_Feed::parse_tag_attributes() — a
-	 * lightweight regex parser, not DOMDocument.
-	 *
-	 * @param string $tag Raw tag markup, e.g. `<link rel="..." href="...">`.
-	 * @return array<string, string>
-	 */
-	private function parse_tag_attributes( string $tag ): array {
-		$attrs = array();
-
-		if (
-			! preg_match_all(
-				'/([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*"([^"]*)"|([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*\'([^\']*)\'/',
-				$tag,
-				$matches,
-				PREG_SET_ORDER
-			)
-		) {
-			return $attrs;
-		}
-
-		foreach ( $matches as $match ) {
-			if ( isset( $match[1] ) && '' !== $match[1] ) {
-				$attrs[ strtolower( $match[1] ) ] = html_entity_decode( $match[2], ENT_QUOTES );
-			} elseif ( isset( $match[3] ) && '' !== $match[3] ) {
-				$attrs[ strtolower( $match[3] ) ] = html_entity_decode( $match[4], ENT_QUOTES );
-			}
-		}
-
-		return $attrs;
 	}
 
 	/**

@@ -139,6 +139,12 @@ Yes. If you already follow someone through the [Friends plugin](https://wordpres
 
 Any WordPress AI Client provider plugin — Anthropic (Claude), Google (Gemini), or OpenAI (GPT). Daymark never talks to an AI vendor directly and never stores API keys; it goes through the core AI Client, and the first configured provider powers caption, title, alt text, tag, and transcript suggestions. Without a configured provider, the AI Assist UI simply does not appear.
 
+= Does Daymark label what AI writes? =
+
+Daymark tells you what AI suggested, and it adds no label for your readers. In the composer, AI suggestions are shown as suggestions (suggested tags and photo descriptions say so until you edit them), and nothing goes out until you tap Publish. The suggestions are short: a caption, a title, a photo description, a few tags, and a transcript only when you ask for one. With "Read to me" on, the audio version is spoken by your AI provider's voice. Daymark saves the audio as your provider made it, and the Listen button appears only in the app, for people signed in.
+
+Daymark puts no "made with AI" label or hidden marker on your published posts, so whether a post needs one is your call as the site's publisher. Some laws, such as the EU AI Act, ask publishers to label AI-written text on matters of public interest unless a person reviewed it and takes responsibility for it. That matters most if you let an AI agent publish for you (see "Can an AI agent use Daymark for me?"), since nobody reads that Mark first. This is general information, not legal advice.
+
 = What does Daymark quietly capture, and can I turn it off? =
 
 Composing a Mark quietly captures a few pieces of metadata in the background, without any field to fill in: the date/time it was created, camera details from a photo's own EXIF data (camera model, aperture, ISO, and similar), an estimated reading time for a longer caption, and AI-suggested tags. A Check In also captures your device's location (only if your browser grants permission) and the current weather there. No other kind of Mark captures a location. None of it is required, none of it can block or delay publishing, and anything that isn't available (permission denied, no EXIF data, no AI provider configured, etc.) is simply left out rather than causing an error.
