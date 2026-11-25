@@ -206,6 +206,14 @@ add_filter(
 	}
 );
 
+// Jetpack Boost's Critical CSS rewrites stylesheets to media="not all"
+// with an inline onload that switches them back. This shell's CSP blocks
+// that handler, and the shell skips wp_head()/wp_footer(), so Boost's
+// critical CSS and its backup switch never print. Without this, the
+// stylesheets never apply. Only Daymark's own styles print here, so
+// turning it off for the whole request is safe.
+add_filter( 'jetpack_boost_async_style', '__return_false', PHP_INT_MAX );
+
 wp_enqueue_style( 'daymark-app' );
 wp_enqueue_script( 'daymark-app' );
 ?>
