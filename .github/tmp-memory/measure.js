@@ -134,11 +134,11 @@ async function run(n) {
 		await page.waitForTimeout(500);
 	}
 	const readySeconds = Math.round((Date.now() - started) / 1000);
-	const bootPeak = peak;
 
 	// Let it sit for a moment once it is up.
 	await page.waitForTimeout(45000);
 	const settled = sample(userDataDir);
+	const bootPeak = peak;
 
 	const describe = async () => frame ? frame.evaluate(() => ({
 		url: location.pathname + location.hash,
