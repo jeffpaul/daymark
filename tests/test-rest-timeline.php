@@ -1182,6 +1182,42 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$this->assertSame( array( $mark_id ), $ids );
 	}
 
+	/** `following=1` leaves the site's own posts out and keeps every followed site's posts. */
+	public function test_following_excludes_the_sites_own_posts() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_a = $this->create_subscription( 'https://example.com/feed-a/' );
+		$subscription_b = $this->create_subscription( 'https://example.com/feed-b/' );
+
+		$this->create_mark( '2024-01-04 00:00:00', 'My Mark' );
+		$post_from_a = $this->create_subscription_post( $subscription_a, '2024-01-02 00:00:00', 'From Subscription A' );
+		$post_from_b = $this->create_subscription_post( $subscription_b, '2024-01-03 00:00:00', 'From Subscription B' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'following', '1' );
+		$request->set_param( 'count', '1' );
+		$response = rest_do_request( $request );
+
+		$this->assertSame( array( $post_from_b, $post_from_a ), array_column( $response->get_data(), 'id' ) );
+		$this->assertSame( '2', $response->get_headers()['X-WP-Total'] );
+	}
+
+	/** `mine=1` together with `following=1` still behaves as `mine`. */
+	public function test_mine_wins_over_following_when_both_are_set() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$mark_id         = $this->create_mark( '2024-01-01 00:00:00', 'A Mark' );
+		$this->create_subscription_post( $subscription_id, '2024-01-02 00:00:00', 'A Subscription Post' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'mine', '1' );
+		$request->set_param( 'following', '1' );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame( array( $mark_id ), $ids );
+	}
+
 	/** `subscription_id` excludes Marks and excludes posts from a different subscription. */
 	public function test_subscription_id_scopes_to_one_subscription_and_excludes_marks() {
 		wp_set_current_user( $this->author_a );
