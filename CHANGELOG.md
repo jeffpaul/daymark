@@ -33,6 +33,7 @@ can't act on them.
 - The font setting in Settings -> Daymark -> General now lists every font in your site's Font Library, both the ones you added and the ones your theme brings. Pick one and the Daymark app shows its text in it. ([#638](https://github.com/jeffpaul/daymark/pull/638))
 - On Explore, Look back now sits just above the People row, so your own memories are the first thing under the search box (and under your recent searches, when you have any) without scrolling past People and Your tags. ([#637](https://github.com/jeffpaul/daymark/pull/637))
 - Pictures on Timeline, Search and Bookmarks cards, and pictures inside a post you open, now load as you scroll toward them instead of all at once, so a long feed opens faster and uses less mobile data. They start loading about three screens ahead of where you are, and the next page of the Timeline is fetched before you reach the end, so scrolling stays smooth. ([#644](https://github.com/jeffpaul/daymark/pull/644))
+- Pictures from the WordPress sites you follow now load at a size that fits your screen instead of the full-size original. A photo straight off a camera took over 100 MB of memory to show on one card, enough for a few of them to slow a phone or a laptop down. Posts already on your Timeline keep the picture they have. ([#648](https://github.com/jeffpaul/daymark/pull/648))
 
 ### Removed
 
