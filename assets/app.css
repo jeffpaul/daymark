@@ -42,6 +42,9 @@
 	--daymark-spacing-lg: 24px;
 	--daymark-spacing-xl: 32px;
 	--daymark-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	/* How wide the column of content may grow. The "Wide screens" block at
+	   the end of this file raises it on a tablet, laptop or desktop. */
+	--daymark-shell-max: 480px;
 }
 
 [dir="rtl"] {
@@ -105,7 +108,7 @@ body.daymark-app {
 }
 
 .daymark-shell {
-	max-width: 480px;
+	max-width: var(--daymark-shell-max);
 	min-height: 100vh;
 	min-height: 100dvh;
 	margin: 0 auto;
@@ -2395,6 +2398,14 @@ button.daymark-stat {
 
 .daymark-bottomnav__link.is-active .daymark-icon {
 	stroke-width: 2.5;
+}
+
+/* A tab's name under its icon. Only the side rail has room for it (see
+   "Wide screens" at the end of this file); along the bottom bar the tabs
+   are icons with a hover title. aria-hidden in the markup: the link's
+   hidden text already names it. */
+.daymark-bottomnav__label {
+	display: none;
 }
 
 /* Holds a tab's icon and, on Notifications, its unread mark: a dot when
@@ -7161,4 +7172,208 @@ a.daymark-thread__time:hover {
 .daymark-notif [data-notif-subpost][aria-busy='true'] {
 	opacity: 0.6;
 	cursor: progress;
+}
+
+/* --- Wide screens: a side rail, and on a big screen a roomier column ---
+   Two sizes of window get the tabs as a rail down the side instead of a
+   bar along the bottom:
+
+   - A big screen, 640 points wide and 500 tall or more: a tablet, a
+     laptop or desktop window, and the open iPhone Duo whichever way up it
+     is held (951 points wide, or 669 turned). The tabs carry their names
+     and the column grows to 620 points.
+   - A phone turned sideways, 560 points wide or more but under 500 tall
+     (the closed Duo on its side is 594 x 368): the same rail, slimmer and
+     icons only, so the bar stops taking a sixth of a short screen. The
+     column keeps its phone width. See the second block below.
+
+   A phone held upright is untouched: nothing here applies under 560
+   points wide, nor between 560 and 640 on a tall window, nor on a window
+   under 280 points tall, which could not fit the rail.
+
+   Everything is keyed on the size of the window, never on the device, so
+   an iPad sharing its screen with another app drops back to the phone
+   layout by itself. RAIL_LAYOUT_QUERY in assets/app.js repeats this
+   condition for the message bar; change the two together.
+
+   These blocks stay last in the file: the launcher rules replace the
+   bottom bar's fan with selectors of the same weight, so they have to
+   come after it. */
+@media (min-width: 640px) and (min-height: 500px), (min-width: 560px) and (min-height: 280px) and (max-height: 499.98px) {
+	:root {
+		--daymark-rail-width: 80px;
+		/* A notch or rounded corner beside the rail, whichever side it
+		   is on: there is no start/end form of these. */
+		--daymark-rail-inset: max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+		/* The column stays centered on the screen, not on the space
+		   beside the rail, so the screens with no rail (the composer, an
+		   open post) sit exactly where the Timeline does. Leaving the
+		   rail's width free on both sides keeps the two apart down to the
+		   narrowest window that gets this layout. */
+		--daymark-shell-max: min(620px, calc(100vw - 2 * (var(--daymark-rail-width) + var(--daymark-rail-inset))));
+	}
+
+	/* The bottom bar, stood on its end down the start edge. */
+	.daymark-homefooter {
+		position: fixed;
+		inset-block: 0;
+		inset-inline-start: 0;
+		inline-size: calc(var(--daymark-rail-width) + var(--daymark-rail-inset));
+		margin-top: 0;
+		padding-inline-start: var(--daymark-rail-inset);
+		border-top: 0;
+		border-inline-end: 1px solid var(--daymark-border);
+		transition: none;
+	}
+
+	/* It costs the page no height here, so it has no reason to slide
+	   away while the Timeline scrolls (bindChromeAutoHide() still sets
+	   the class, for the moment the window narrows back to a bar). */
+	.daymark-homefooter.is-footer-hidden {
+		transform: none;
+	}
+
+	.daymark-homefooter .daymark-bottomnav {
+		position: static;
+		flex-direction: column;
+		justify-content: flex-start;
+		block-size: 100%;
+		padding: var(--daymark-spacing-md) var(--daymark-spacing-xs);
+		padding-block-start: calc(var(--daymark-spacing-md) + env(safe-area-inset-top, 0px));
+		padding-block-end: calc(var(--daymark-spacing-md) + env(safe-area-inset-bottom, 0px));
+	}
+
+	.daymark-homefooter .daymark-bottomnav__link {
+		flex: none;
+		flex-direction: column;
+		gap: 2px;
+		min-height: 56px;
+		padding: 6px 0;
+	}
+
+	.daymark-homefooter .daymark-bottomnav__link.is-active {
+		background: var(--daymark-accent-wash);
+	}
+
+	/* Wraps instead of being cut short: a translated name can be longer
+	   than "Notifications", and the rail has height to spare. */
+	.daymark-homefooter .daymark-bottomnav__label {
+		display: block;
+		max-inline-size: 100%;
+		font-size: 11px;
+		line-height: 1.2;
+		text-align: center;
+		overflow-wrap: anywhere;
+	}
+
+	/* The new Mark button goes under the four tabs. In the markup it
+	   stays between them, where the bottom bar needs it, so a keyboard
+	   reaches it after Explore. */
+	.daymark-homefooter .daymark-launcher {
+		order: 1;
+		flex: none;
+		align-items: center;
+		margin-block-start: var(--daymark-spacing-md);
+	}
+
+	.daymark-homefooter .daymark-launcher__btn {
+		margin-top: 0;
+	}
+
+	/* The five types come out in a row beside the button, in the order
+	   the bottom bar's fan reads across, instead of an arc above it:
+	   there is no room above, and a whole screen to the side. Still
+	   centered with the physical left: 50% the fan uses, and mirrored
+	   through --daymark-dir. Their names stay under each circle; 76
+	   points apart leaves each name that much room. */
+	.daymark-homefooter .daymark-launcher__bubble {
+		top: 50%;
+		bottom: auto;
+		transform: translate(-50%, -50%) scale(0.3);
+	}
+
+	.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="image"] {
+		transform: translate(calc(-50% + var(--daymark-dir) * 84px), -50%) scale(1);
+	}
+
+	.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="video"] {
+		transform: translate(calc(-50% + var(--daymark-dir) * 160px), -50%) scale(1);
+	}
+
+	.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="checkin"] {
+		transform: translate(calc(-50% + var(--daymark-dir) * 236px), -50%) scale(1);
+	}
+
+	.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="audio"] {
+		transform: translate(calc(-50% + var(--daymark-dir) * 312px), -50%) scale(1);
+	}
+
+	.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="note"] {
+		transform: translate(calc(-50% + var(--daymark-dir) * 388px), -50%) scale(1);
+	}
+
+	/* The bottom bar used to be the last thing in the column, so the
+	   content above it never needed space of its own at the bottom. */
+	.daymark-shell:has(> .daymark-homefooter) {
+		padding-block-end: calc(var(--daymark-spacing-xl) + env(safe-area-inset-bottom, 0px));
+	}
+
+	/* No bottom bar to clear. */
+	.daymark-notif-undo {
+		bottom: calc(env(safe-area-inset-bottom, 0px) + var(--daymark-spacing-md));
+	}
+}
+
+/* A phone turned sideways: the rail above, cut down to fit a short
+   screen. Icons only, as along the bottom bar (the link's title and
+   hidden text still name each tab), at the smallest size a thumb can
+   hit. Four tabs and the new Mark button need about 266 points, hence
+   the 280 floor. */
+@media (min-width: 560px) and (min-height: 280px) and (max-height: 499.98px) {
+	:root {
+		--daymark-rail-width: 64px;
+		/* Still a phone: the wider column would only make each picture
+		   taller on a screen with no height to spare. */
+		--daymark-shell-max: 480px;
+	}
+
+	/* There is no room to center the column on the screen and clear the
+	   rail too (594 points holds 64 and 480 with 50 over), so here it
+	   centers on the space beside the rail. Every screen gets the same
+	   space, with or without a rail, so the composer and an open post
+	   still sit exactly where the Timeline does. */
+	body.daymark-app {
+		padding-inline-start: calc(var(--daymark-rail-width) + var(--daymark-rail-inset));
+	}
+
+	.daymark-homefooter .daymark-bottomnav {
+		padding-block-start: calc(var(--daymark-spacing-sm) + env(safe-area-inset-top, 0px));
+		padding-block-end: calc(var(--daymark-spacing-sm) + env(safe-area-inset-bottom, 0px));
+	}
+
+	.daymark-homefooter .daymark-bottomnav__link {
+		min-height: var(--daymark-tap-min);
+		padding: 0;
+	}
+
+	.daymark-homefooter .daymark-bottomnav__label {
+		display: none;
+	}
+
+	.daymark-homefooter .daymark-launcher {
+		margin-block-start: var(--daymark-spacing-sm);
+	}
+
+	/* The Timeline's "new posts" button centers on the screen; half the
+	   rail's width further along puts it over the column again. */
+	.daymark-newposts {
+		transform: translateX(calc(-50% + var(--daymark-dir) * (var(--daymark-rail-width) + var(--daymark-rail-inset)) / 2));
+	}
+
+	/* These span the screen, which here would run them across the foot
+	   of the rail. */
+	.daymark-msgbar,
+	.daymark-notif-undo {
+		inset-inline-start: calc(var(--daymark-rail-width) + var(--daymark-rail-inset) + var(--daymark-spacing-md));
+	}
 }
