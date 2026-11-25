@@ -497,6 +497,22 @@ JSON;
 		$this->assertSame( "Jane's Site", $result[0]['title'] );
 	}
 
+	/** discover() reads a JSON feed link written without quotes around its attribute values. */
+	public function test_discover_reads_unquoted_json_feed_link() {
+		$site_html = '<html><head><title>Jane</title>'
+			. '<link rel=alternate type=application/mf2+json href=/feed/mf2/>'
+			. '</head><body><div class="h-feed"><article class="h-entry"><p class="p-name">Hi</p></article></div></body></html>';
+
+		$this->mock_response( 'https://jane.example/', $site_html );
+		$this->mock_response( 'https://jane.example/feed/mf2/', self::JSON_FEED_BODY );
+
+		$result = $this->source->discover( 'https://jane.example/' );
+
+		$this->assertCount( 1, $result );
+		$this->assertSame( 'https://jane.example/feed/mf2/', $result[0]['url'] );
+		$this->assertSame( 'application/mf2+json', $result[0]['type'] );
+	}
+
 	/** discover() falls back to the HTML page candidate when the advertised JSON link doesn't actually verify — a stale/broken link is never trusted on presence alone. */
 	public function test_discover_falls_back_to_html_when_json_link_does_not_verify() {
 		$site_html = '<html><head><title>Jane\'s Site</title>'
