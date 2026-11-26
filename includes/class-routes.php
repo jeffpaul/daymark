@@ -96,6 +96,7 @@ class Daymark_Routes {
 		$this->app->add_menu_item( 'notifications', __( 'Notifications', 'daymark' ), self::app_url( 'notifications' ) );
 		$this->app->add_menu_item( 'me', __( 'Me', 'daymark' ), self::app_url( 'me' ) );
 		$this->app->add_menu_item( 'create', __( 'New Mark', 'daymark' ), self::app_url() . '#create' );
+		$this->app->add_menu_item( 'settings', __( 'Settings' ), self_admin_url( 'options-general.php?page=daymark' ) ); // phpcs:ignore WordPress.WP.I18n.MissingArgDomain -- Settings is a core WP string.
 	}
 
 	/** Configure the framework fallback after authentication and connector registration. */
