@@ -1323,6 +1323,22 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			)
 		);
 
+		register_rest_route(
+			$this->namespace,
+			'/preferences/masterbar',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'update_masterbar_preference' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'show' => array(
+						'type'     => 'boolean',
+						'required' => true,
+					),
+				),
+			)
+		);
+
 		// Web push: register or remove this device, choose which kinds of
 		// push to get, and send yourself a test. Saving a device and
 		// preferences are local per-user writes with no outbound request;
@@ -4174,6 +4190,17 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'devices'    => count( Daymark_Push::get_subscriptions( get_current_user_id() ) ),
 			)
 		);
+	}
+
+	/**
+	 * Save the current user's masterbar preference.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response
+	 */
+	public function update_masterbar_preference( WP_REST_Request $request ): WP_REST_Response {
+		update_user_meta( get_current_user_id(), Daymark_Settings::SHOW_MASTERBAR, (bool) $request->get_param( 'show' ) );
+		return new WP_REST_Response( array( 'showMasterbar' => Daymark_Settings::show_masterbar() ) );
 	}
 
 	/**

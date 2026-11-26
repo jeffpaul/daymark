@@ -179,6 +179,7 @@ class Daymark_Routes {
 			'imageEdit',
 			'noteLength',
 			'compactTimeline',
+			'showMasterbar',
 			'capture',
 			'appFont',
 			'canPublish',
@@ -971,6 +972,7 @@ class Daymark_Routes {
 			// the destination" note.
 			'reach'                  => self::federation_reach(),
 			// Whether lists show each post as just its title and thumbnail.
+			'showMasterbar'          => Daymark_Settings::show_masterbar(),
 			'compactTimeline'        => Daymark_Settings::compact_timeline(),
 			// Whether starting a Check In may ask for the device's location.
 			'capture'                => array(

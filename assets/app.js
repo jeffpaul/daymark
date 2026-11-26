@@ -12697,6 +12697,18 @@
 						}
 					</nav>
 				</section>
+				<section class="daymark-meapp" aria-labelledby="daymark-me-appearance-heading">
+					<h2 id="daymark-me-appearance-heading" class="daymark-section-heading">${esc(__('Appearance', 'daymark'))}</h2>
+					<label class="daymark-dest__row" for="daymark-masterbar">
+						<span class="daymark-dest__info"><span class="daymark-dest__name">${esc(__('Show the WordPress masterbar', 'daymark'))}</span></span>
+						<span class="daymark-toggle">
+							<input type="checkbox" class="daymark-toggle__input" id="daymark-masterbar" data-me-masterbar${config.showMasterbar ? ' checked' : ''} />
+							<span class="daymark-toggle__track" aria-hidden="true"></span>
+						</span>
+					</label>
+					<p class="daymark-field__help">${esc(__('Includes the WP Apps menu for switching between apps. This setting applies only to your account.', 'daymark'))}</p>
+					<p class="daymark-field__help" data-masterbar-status role="status"></p>
+				</section>
 				${pushSettingsMarkup()}
 			</section>
 			${navFooterMarkup('me')}`;
@@ -12718,6 +12730,22 @@
 			refreshInstallUi();
 
 			bindPushSettings(root.querySelector('[data-me-push]'));
+
+			const masterbar = root.querySelector('[data-me-masterbar]');
+			if (masterbar) {
+				masterbar.addEventListener('change', async () => {
+					masterbar.disabled = true;
+					try {
+						await apiPost('preferences/masterbar', { show: masterbar.checked });
+						window.location.reload();
+					} catch (err) {
+						masterbar.checked = !!config.showMasterbar;
+						masterbar.disabled = false;
+						root.querySelector('[data-masterbar-status]').textContent = err && err.message ? err.message : __('Couldn’t save that change.', 'daymark');
+					}
+				});
+			}
+
 
 			const logout = root.querySelector('[data-me-logout]');
 			if (logout) {

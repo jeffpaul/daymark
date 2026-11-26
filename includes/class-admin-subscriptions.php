@@ -735,8 +735,6 @@ class Daymark_Admin_Subscriptions {
 			<?php $this->render_timeline_display_form(); ?>
 			<h2><?php esc_html_e( 'App icon', 'daymark' ); ?></h2>
 			<?php $this->render_app_badge_form(); ?>
-			<h2><?php esc_html_e( 'WordPress masterbar', 'daymark' ); ?></h2>
-			<?php $this->render_masterbar_form(); ?>
 			<?php submit_button( __( 'Save changes', 'daymark' ) ); ?>
 		</form>
 		<?php
@@ -3835,19 +3833,6 @@ class Daymark_Admin_Subscriptions {
 		<?php
 	}
 
-	/** Render the optional WordPress masterbar setting. */
-	private function render_masterbar_form(): void {
-		?>
-		<p>
-			<label>
-				<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::SHOW_MASTERBAR ); ?>" value="1" <?php checked( Daymark_Settings::show_masterbar() ); ?> />
-				<?php esc_html_e( 'Show the WordPress masterbar in Daymark', 'daymark' ); ?>
-			</label>
-		</p>
-		<p class="description"><?php esc_html_e( 'Adds the WordPress masterbar above Daymark, including the WP Apps menu for switching between apps on your site. Leave this off to keep Daymark’s usual app appearance.', 'daymark' ); ?></p>
-		<?php
-	}
-
 	/**
 	 * The app badge setting: whether the installed app's icon shows the
 	 * number of unread notifications. Off by default.
@@ -4141,7 +4126,6 @@ class Daymark_Admin_Subscriptions {
 			Daymark_Settings::ANNOUNCE_FOLLOWS   => array( true, Daymark_Settings::announce_follows() ),
 			Daymark_Settings::HIDE_NOTES_ON_HOME => array( false, Daymark_Settings::hide_notes_on_home() ),
 			Daymark_Settings::COMPACT_TIMELINE   => array( false, Daymark_Settings::compact_timeline() ),
-			Daymark_Settings::SHOW_MASTERBAR     => array( false, Daymark_Settings::show_masterbar() ),
 			Daymark_Settings::APP_BADGE          => array( false, Daymark_Settings::app_badge_unread() ),
 		);
 	}

@@ -89,7 +89,7 @@ final class Daymark_Settings {
 	 */
 	public const APP_BADGE = 'daymark_app_badge_unread';
 
-	/** Option: show the WordPress masterbar inside Daymark. */
+	/** User meta: show the WordPress masterbar inside Daymark. */
 	public const SHOW_MASTERBAR = 'daymark_show_masterbar';
 
 	/**
@@ -492,7 +492,7 @@ final class Daymark_Settings {
 
 	/** Whether to show the optional WordPress masterbar inside Daymark. */
 	public static function show_masterbar(): bool {
-		return (bool) get_option( self::SHOW_MASTERBAR, false );
+		return (bool) get_user_meta( get_current_user_id(), self::SHOW_MASTERBAR, true );
 	}
 
 	/**
