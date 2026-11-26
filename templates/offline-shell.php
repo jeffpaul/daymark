@@ -69,7 +69,8 @@ wp_enqueue_style( 'daymark-app' );
 	<?php /* Home-screen icon (issue #414): always Daymark's own icon, matching the online app shell's own tag — see its comment for why. */ ?>
 	<link rel="apple-touch-icon" sizes="180x180" href="<?php echo esc_url( Daymark_Routes::apple_touch_icon_url() ); ?>" />
 	<link rel="icon" href="<?php echo esc_url( Daymark_Routes::icon_url( 32 ) ); ?>" sizes="32x32" />
-	<?php wp_print_styles( array( 'daymark-featured-content', 'daymark-app' ) ); ?>
+	<?php /* Not wp_print_styles(): this page's script-src 'self' blocks the inline handler Jetpack Boost would add (see Daymark_Routes::print_styles()). */ ?>
+	<?php Daymark_Routes::print_styles( array( 'daymark-featured-content', 'daymark-app' ) ); ?>
 </head>
 <body class="daymark-app daymark-app--home">
 	<div id="daymark-app" class="daymark-shell">
