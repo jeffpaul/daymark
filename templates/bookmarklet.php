@@ -68,7 +68,8 @@ wp_register_script( 'daymark-bookmarklet', DAYMARK_PLUGIN_URL . 'assets/bookmark
 	<meta name="color-scheme" content="light dark" />
 	<title><?php echo '' !== $daymark_bm_target['url'] ? esc_html__( 'Reblog or Like – Daymark', 'daymark' ) : esc_html__( 'Daymark bookmarklet', 'daymark' ); ?></title>
 	<link rel="icon" href="<?php echo esc_url( Daymark_Routes::daymark_icon_url( 32 ) ); ?>" sizes="32x32" />
-	<?php wp_print_styles( array( 'daymark-app' ) ); ?>
+	<?php /* Not wp_print_styles(): the popup's script-src 'self' blocks the inline handler Jetpack Boost would add (see Daymark_Routes::print_styles()). */ ?>
+	<?php Daymark_Routes::print_styles( array( 'daymark-app' ) ); ?>
 </head>
 <body class="daymark-app daymark-bookmarklet">
 	<main class="daymark-shell daymark-bookmarklet__shell">

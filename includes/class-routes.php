@@ -255,6 +255,27 @@ class Daymark_Routes {
 	}
 
 	/**
+	 * Print stylesheets on one of Daymark's own standalone pages: the app
+	 * shell, the offline shell, and the bookmarklet popup.
+	 *
+	 * Jetpack Boost's Critical CSS rewrites stylesheets to media="not all"
+	 * with an inline onload that switches them back. These pages' CSP
+	 * blocks that handler, and they skip wp_head()/wp_footer(), so Boost's
+	 * critical CSS and its backup switch never print. Without this, the
+	 * stylesheets never apply. Only Daymark's own styles print on these
+	 * pages, so turning it off for the rest of the request is safe. It does
+	 * nothing on a site without Boost.
+	 *
+	 * @param string[] $handles Style handles to print.
+	 * @return void
+	 */
+	public static function print_styles( array $handles ): void {
+		add_filter( 'jetpack_boost_async_style', '__return_false', PHP_INT_MAX );
+
+		wp_print_styles( $handles );
+	}
+
+	/**
 	 * The PWA manifest, built against the resolved app base so
 	 * home-screen installs open the right URL wherever the app lives.
 	 *
