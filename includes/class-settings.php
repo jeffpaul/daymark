@@ -89,6 +89,9 @@ final class Daymark_Settings {
 	 */
 	public const APP_BADGE = 'daymark_app_badge_unread';
 
+	/** Option: show the WordPress masterbar inside Daymark. */
+	public const SHOW_MASTERBAR = 'daymark_show_masterbar';
+
 	/**
 	 * Option: the destinations a new Mark of each type starts with, as a
 	 * map of Mark type to connector IDs.
@@ -485,6 +488,11 @@ final class Daymark_Settings {
 		 * @param bool $hide Defaults to the `daymark_hide_notes_on_home` option.
 		 */
 		return (bool) apply_filters( 'daymark_hide_notes_on_home', (bool) get_option( self::HIDE_NOTES_ON_HOME, false ) );
+	}
+
+	/** Whether to show the optional WordPress masterbar inside Daymark. */
+	public static function show_masterbar(): bool {
+		return (bool) get_option( self::SHOW_MASTERBAR, false );
 	}
 
 	/**

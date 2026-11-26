@@ -55,7 +55,8 @@ if ( ! current_user_can( 'edit_posts' ) ) {
 // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encoding random bytes into a CSP nonce, not obfuscating code.
 $daymark_csp_nonce = base64_encode( random_bytes( 16 ) );
 
-$daymark_chromeless = \WpApp\OpenStation::is_chromeless_request();
+$daymark_chromeless     = \WpApp\OpenStation::is_chromeless_request();
+$daymark_show_masterbar = ! $daymark_chromeless && Daymark_Settings::show_masterbar();
 
 $daymark_csp_parts = array(
 	"default-src 'self'",
@@ -230,7 +231,7 @@ wp_enqueue_script( 'daymark-app' );
 	<link rel="apple-touch-icon" sizes="180x180" href="<?php echo esc_url( Daymark_Routes::apple_touch_icon_url() ); ?>" />
 	<link rel="icon" href="<?php echo esc_url( Daymark_Routes::icon_url( 32 ) ); ?>" sizes="32x32" />
 	<?php
-	if ( ! $daymark_chromeless ) {
+	if ( $daymark_show_masterbar ) {
 		wp_app_enqueue_admin_bar_dependencies();
 		wp_print_styles( array( 'dashicons', 'admin-bar' ) );
 		// Only the framework head hooks: keep theme assets out of the shell.
@@ -247,9 +248,9 @@ wp_enqueue_script( 'daymark-app' );
 	wp_print_styles( array( 'daymark-featured-content', 'daymark-app' ) );
 	?>
 </head>
-<body class="daymark-app daymark-app--<?php echo esc_attr( $daymark_screen ); ?><?php echo $daymark_chromeless ? ' wp-app-chromeless' : ' daymark-app--masterbar'; ?>">
+<body class="daymark-app daymark-app--<?php echo esc_attr( $daymark_screen ); ?><?php echo $daymark_chromeless ? ' wp-app-chromeless' : ( $daymark_show_masterbar ? ' daymark-app--masterbar' : '' ); ?>">
 	<?php
-	if ( ! $daymark_chromeless ) {
+	if ( $daymark_show_masterbar ) {
 		wp_app_body_open();
 	}
 	?>
@@ -261,7 +262,7 @@ wp_enqueue_script( 'daymark-app' );
 	</noscript>
 	<?php wp_print_scripts( array( 'daymark-featured-content', 'daymark-app' ) ); ?>
 	<?php
-	if ( ! $daymark_chromeless ) {
+	if ( $daymark_show_masterbar ) {
 		wp_print_scripts( array( 'admin-bar' ) );
 	}
 	// The launcher enqueues its window bridge before the framework renders.
