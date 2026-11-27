@@ -163,7 +163,7 @@ class Test_Blogroll extends WP_UnitTestCase {
 		$with_icons = Daymark_Plugin::instance()->blogroll->render_block( array() );
 		$no_icons   = Daymark_Plugin::instance()->blogroll->render_block( array( 'showIcons' => false ) );
 
-		$this->assertStringContainsString( '<a href="https://alpha.example/">Alpha</a>', $with_icons );
+		$this->assertStringContainsString( '<a href="https://alpha.example/" rel="nomention">Alpha</a>', $with_icons );
 		$this->assertStringContainsString( 'https://alpha.example/icon.png', $with_icons );
 		$this->assertStringNotContainsString( '<img', $no_icons );
 	}
@@ -176,6 +176,21 @@ class Test_Blogroll extends WP_UnitTestCase {
 
 		$this->assertStringContainsString( 'wp-block-daymark-blogroll', $output );
 		$this->assertStringContainsString( '>Alpha</a>', $output );
+	}
+
+	/**
+	 * Every link the block renders is marked rel="nomention", so the
+	 * Webmention plugin (5.12.0 and later, which reads links in rendered
+	 * blocks) does not notify each followed site when the page is saved.
+	 */
+	public function test_block_links_opt_out_of_webmentions(): void {
+		$this->subscribe( 'https://alpha.example/', 'Alpha' );
+		$this->subscribe( 'https://beta.example/', 'Beta' );
+
+		$output = do_blocks( '<!-- wp:daymark/blogroll /-->' );
+
+		$this->assertSame( 2, substr_count( $output, '<a ' ) );
+		$this->assertSame( 2, substr_count( $output, 'rel="nomention"' ) );
 	}
 
 	/** The block renders nothing when no sites are followed. */

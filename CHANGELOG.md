@@ -43,6 +43,7 @@ can't act on them.
 
 ### Fixed
 
+- A page or post with the Blogroll block no longer sends a Webmention to every site you follow each time you save it. The Webmention plugin (5.12.0 and later) reads the links inside blocks, so the block now marks its links as ones not to notify. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
 - On WordPress 7.2, which redesigns the block editor's Post sidebar, "Set featured content" and the Note length row now look like the controls around them again: the button gets the same dashed blue outline as "Set featured image", and the row gets the same grey label and bold value as Status and Format. Nothing changes on WordPress 7.0 or 7.1. ([#647](https://github.com/jeffpaul/daymark/pull/647))
 - Daymark's page on wordpress.org no longer cuts off its description and its changelog. Both were longer than wordpress.org shows, so the list of outside services stopped partway through and the changelog stopped inside an older release. The details of what your site sends to sites you follow now sit in the FAQ, and the changelog lists the three most recent releases. ([#630](https://github.com/jeffpaul/daymark/pull/630))
 - Following a site now finds its feed when the page writes its feed link without quotes, as many speed-optimized sites do. Before, Daymark could miss it. A feed link the site has commented out is no longer offered. ([#644](https://github.com/jeffpaul/daymark/pull/644))
