@@ -234,7 +234,11 @@ class Daymark_Blogroll {
 				? sprintf( '<img src="%s" alt="" width="20" height="20" loading="lazy" style="vertical-align:middle;margin-inline-end:0.5em;border-radius:4px;" /> ', esc_url( $icon ) )
 				: '';
 
-			$items .= sprintf( '<li>%1$s<a href="%2$s">%3$s</a></li>', $img, $url, esc_html( self::label( $site ) ) );
+			// rel="nomention": the Webmention plugin (5.12.0 and later) reads the
+			// links in rendered blocks, and would otherwise send a Webmention to
+			// every site listed each time the page holding this block is saved.
+			// A blogroll link is not a mention of anything that site wrote.
+			$items .= sprintf( '<li>%1$s<a href="%2$s" rel="nomention">%3$s</a></li>', $img, $url, esc_html( self::label( $site ) ) );
 		}
 
 		if ( '' === $items ) {

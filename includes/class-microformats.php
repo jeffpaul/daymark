@@ -312,8 +312,9 @@ class Daymark_Microformats {
 	 * Make the Webmention plugin actually notify a Mark's reply/repost/like
 	 * target.
 	 *
-	 * The plugin's sender only pings URLs it extracts from the post's raw
-	 * `post_content`, plus whatever the `webmention_links` filter adds
+	 * The plugin's sender only pings URLs it extracts from the post's
+	 * `post_content` (with its blocks and shortcodes rendered, since
+	 * Webmention 5.12.0), plus whatever the `webmention_links` filter adds
 	 * (confirmed against pfefferle/wordpress-webmention's
 	 * `Sender::send_webmentions()`). The target link this class renders as
 	 * `u-in-reply-to`/`u-repost-of`/`u-like-of` is appended at display time
